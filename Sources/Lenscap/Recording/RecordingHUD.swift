@@ -16,30 +16,58 @@ final class RecordingHUDController: NSObject {
         let dot = NSView()
         dot.wantsLayer = true
         dot.layer?.backgroundColor = NSColor.systemRed.cgColor
-        dot.layer?.cornerRadius = 5
+        dot.layer?.cornerRadius = 4.5
         dot.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            dot.widthAnchor.constraint(equalToConstant: 10),
-            dot.heightAnchor.constraint(equalToConstant: 10),
+            dot.widthAnchor.constraint(equalToConstant: 9),
+            dot.heightAnchor.constraint(equalToConstant: 9),
         ])
 
-        timeLabel.textColor = .white
+        // Slow opacity breathe so the dot reads as "live" without being distracting.
+        let pulse = CABasicAnimation(keyPath: "opacity")
+        pulse.fromValue = 1.0
+        pulse.toValue = 0.35
+        pulse.duration = 1.1
+        pulse.autoreverses = true
+        pulse.repeatCount = .infinity
+        pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        dot.layer?.add(pulse, forKey: "pulse")
+
+        timeLabel.textColor = .labelColor
         timeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
         timeLabel.stringValue = "00:00"
 
-        let stopButton = NSButton(title: "Stop", target: self, action: #selector(stopPressed))
-        stopButton.bezelStyle = .rounded
-        stopButton.controlSize = .small
+        let stopIcon = NSImage(systemSymbolName: "stop.fill", accessibilityDescription: "Stop")?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .bold))
+        let stopButton = NSButton(image: stopIcon ?? NSImage(), target: self, action: #selector(stopPressed))
+        stopButton.isBordered = false
+        stopButton.bezelStyle = .regularSquare
+        stopButton.contentTintColor = .white
+        stopButton.wantsLayer = true
+        stopButton.layer?.backgroundColor = NSColor.systemRed.cgColor
+        stopButton.layer?.cornerRadius = 6
+        stopButton.layer?.cornerCurve = .continuous
+        stopButton.toolTip = "Stop Recording"
+        stopButton.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stopButton.widthAnchor.constraint(equalToConstant: 30),
+            stopButton.heightAnchor.constraint(equalToConstant: 20),
+        ])
 
         let stack = NSStackView(views: [dot, timeLabel, stopButton])
         stack.orientation = .horizontal
         stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(top: 7, left: 12, bottom: 7, right: 9)
+        stack.setCustomSpacing(10, after: timeLabel)
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 8)
 
-        let container = NSView()
+        let container = NSVisualEffectView()
+        container.material = .hudWindow
+        container.blendingMode = .behindWindow
+        container.state = .active
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
-        container.layer?.cornerRadius = 10
+        container.layer?.cornerRadius = 12
+        container.layer?.cornerCurve = .continuous
+        container.layer?.masksToBounds = true
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

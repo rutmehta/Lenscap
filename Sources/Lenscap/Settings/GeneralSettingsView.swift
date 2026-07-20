@@ -14,9 +14,14 @@ struct GeneralSettingsView: View {
     var body: some View {
         Form {
             Section("Startup") {
-                Text("Lenscap is a plain executable and cannot register itself as a login item. To launch it at login, add the binary in System Settings → General → Login Items.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Label {
+                    Text("Lenscap is a plain executable and cannot register itself as a login item. To launch it at login, add the binary in System Settings → General → Login Items.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "info.circle")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Save Location") {
@@ -42,6 +47,7 @@ struct GeneralSettingsView: View {
                     Text("\(Int(quickAccessDuration))s")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .frame(width: 32, alignment: .trailing)
                 }
                 .disabled(!showQuickAccess)
                 Toggle("Play sound", isOn: $playSound)

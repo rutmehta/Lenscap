@@ -24,15 +24,18 @@ enum HotkeyAction: String, CaseIterable {
         }
     }
 
+    /// Defaults mirror the classic macOS / CleanShot X layout: ⌘⇧3 fullscreen,
+    /// ⌘⇧4 area, ⌘⇧5 record. macOS's own screenshot shortcuts must be disabled in
+    /// System Settings → Keyboard → Keyboard Shortcuts → Screenshots or both fire.
     var defaultCombo: KeyCombo? {
         let cmdShift = UInt32(cmdKey | shiftKey)
         switch self {
-        case .captureArea: return KeyCombo(keyCode: UInt32(kVK_ANSI_7), carbonModifiers: cmdShift)
-        case .captureWindow: return KeyCombo(keyCode: UInt32(kVK_ANSI_8), carbonModifiers: cmdShift)
-        case .captureFullscreen: return KeyCombo(keyCode: UInt32(kVK_ANSI_9), carbonModifiers: cmdShift)
+        case .captureArea: return KeyCombo(keyCode: UInt32(kVK_ANSI_4), carbonModifiers: cmdShift)
+        case .captureWindow: return KeyCombo(keyCode: UInt32(kVK_ANSI_6), carbonModifiers: cmdShift)
+        case .captureFullscreen: return KeyCombo(keyCode: UInt32(kVK_ANSI_3), carbonModifiers: cmdShift)
         case .captureText: return KeyCombo(keyCode: UInt32(kVK_ANSI_2), carbonModifiers: cmdShift)
-        case .scrollingCapture: return KeyCombo(keyCode: UInt32(kVK_ANSI_6), carbonModifiers: cmdShift)
-        case .recordVideo: return KeyCombo(keyCode: UInt32(kVK_ANSI_0), carbonModifiers: cmdShift)
+        case .scrollingCapture: return KeyCombo(keyCode: UInt32(kVK_ANSI_7), carbonModifiers: cmdShift)
+        case .recordVideo: return KeyCombo(keyCode: UInt32(kVK_ANSI_5), carbonModifiers: cmdShift)
         case .recordGIF: return nil
         case .openHistory: return nil
         }

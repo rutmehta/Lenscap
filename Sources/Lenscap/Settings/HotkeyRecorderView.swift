@@ -32,8 +32,11 @@ final class HotkeyRecorderButton: NSButton {
     init(hotkeyAction: HotkeyAction) {
         self.hotkeyAction = hotkeyAction
         super.init(frame: .zero)
-        bezelStyle = .rounded
-        setButtonType(.momentaryPushIn)
+        isBordered = false
+        setButtonType(.momentaryChange)
+        wantsLayer = true
+        layer?.cornerRadius = 6
+        layer?.cornerCurve = .continuous
         font = .systemFont(ofSize: NSFont.smallSystemFontSize)
         target = self
         action = #selector(toggleArmed)
@@ -52,11 +55,39 @@ final class HotkeyRecorderButton: NSButton {
     }
 
     func refreshTitle() {
+        let text: String
         if isArmed {
-            title = "Press Shortcut…"
+            text = "Press Shortcut…"
         } else {
-            title = HotkeyManager.shared.combo(for: hotkeyAction)?.displayString ?? "Record Shortcut"
+            text = HotkeyManager.shared.combo(for: hotkeyAction)?.displayString ?? "Record Shortcut"
         }
+        applyStyle(text: text)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refreshTitle()
+    }
+
+    /// Rounded-rect fill like the system shortcut recorders: quiet secondary fill at
+    /// rest, accent-tinted while armed and waiting for a key.
+    private func applyStyle(text: String) {
+        let background = isArmed
+            ? NSColor.controlAccentColor
+            : NSColor.labelColor.withAlphaComponent(0.07)
+        let textColor: NSColor = isArmed ? .white : .labelColor
+        effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            layer?.backgroundColor = background.cgColor
+        }
+
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .center
+        paragraph.lineBreakMode = .byTruncatingTail
+        attributedTitle = NSAttributedString(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .medium),
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraph,
+        ])
     }
 
     // MARK: - Arming

@@ -89,6 +89,7 @@ private struct EditorRootView: View {
     var body: some View {
         VStack(spacing: 0) {
             EditorToolbar(state: state)
+                .background(.bar)
             Divider()
             AnnotationCanvasRepresentable(state: state)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

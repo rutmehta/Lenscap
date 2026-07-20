@@ -60,18 +60,24 @@ Lenscap never asks for network, contacts, or anything else — there is nothing 
 
 ## Default shortcuts
 
+Defaults mirror the classic macOS / CleanShot X layout:
+
 | Action | Shortcut |
 |---|---|
-| Capture Area | ⌘⇧7 |
-| Capture Window | ⌘⇧8 |
-| Capture Fullscreen | ⌘⇧9 |
+| Capture Fullscreen | ⌘⇧3 |
+| Capture Area | ⌘⇧4 |
+| Record Video | ⌘⇧5 |
+| Capture Window | ⌘⇧6 |
+| Scrolling Capture | ⌘⇧7 |
 | Capture Text (OCR) | ⌘⇧2 |
-| Scrolling Capture | ⌘⇧6 |
-| Record Video | ⌘⇧0 |
 | Record GIF | — (unassigned) |
 | Open History | — (unassigned) |
 
 All shortcuts are system-wide and can be changed or disabled in Settings.
+
+> **Note**: macOS's built-in screenshot shortcuts use the same keys. Disable them in
+> **System Settings → Keyboard → Keyboard Shortcuts… → Screenshots** so both don't fire
+> at once (this is the same step CleanShot X asks for).
 
 ## Project structure
 

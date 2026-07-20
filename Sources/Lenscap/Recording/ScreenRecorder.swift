@@ -17,6 +17,7 @@ final class ScreenRecorder: NSObject {
     private var stream: SCStream?
     private var output: RecordingStreamOutput?
     private var hud: RecordingHUDController?
+    private var outline: RecordingOutlineController?
     private var mode: RecordingMode = .video
     private var isStarting = false
     private var gifLimitHit = false
@@ -129,6 +130,11 @@ final class ScreenRecorder: NSObject {
             let hudController = RecordingHUDController()
             hudController.show(on: screen, avoiding: recordsFullScreen ? nil : selection?.rect)
             hud = hudController
+
+            let outlineController = RecordingOutlineController()
+            let outlinedRect = recordsFullScreen ? screen.frame : (selection?.rect ?? screen.frame)
+            outlineController.show(around: outlinedRect, on: screen)
+            outline = outlineController
         } catch {
             output?.cancel()
             output = nil
@@ -147,6 +153,8 @@ final class ScreenRecorder: NSObject {
         AppCoordinator.shared.statusBar?.setRecording(false)
         hud?.hide()
         hud = nil
+        outline?.hide()
+        outline = nil
 
         if let stream {
             try? await stream.stopCapture()
@@ -217,6 +225,8 @@ final class ScreenRecorder: NSObject {
         AppCoordinator.shared.statusBar?.setRecording(false)
         hud?.hide()
         hud = nil
+        outline?.hide()
+        outline = nil
         output?.cancel()
         output = nil
         stream = nil

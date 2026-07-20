@@ -194,8 +194,23 @@ final class AnnotationCanvasView: NSView {
         }
         ctx.restoreGState()
 
+        drawImageHairline(geometry: g)
         drawSelectionChrome()
         drawCropChrome()
+    }
+
+    /// Hairline around the screenshot so its edges stay visible when the
+    /// capture blends into the canvas surround. Skipped when the beautify
+    /// shadow already separates the image from the background.
+    private func drawImageHairline(geometry g: Geometry) {
+        guard !state.background.shadow else { return }
+        let clipRadius = min(state.background.cornerRadius * state.pixelScale,
+                             min(state.baseSize.width, state.baseSize.height) / 2) * g.scale
+        let path = NSBezierPath(roundedRect: g.screenshotRect.insetBy(dx: -0.5, dy: -0.5),
+                                xRadius: clipRadius, yRadius: clipRadius)
+        path.lineWidth = 1
+        NSColor.separatorColor.setStroke()
+        path.stroke()
     }
 
     private func drawFilterDraft(_ draft: Annotation, in ctx: CGContext, scale: CGFloat) {

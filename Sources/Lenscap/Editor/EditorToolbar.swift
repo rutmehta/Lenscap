@@ -16,90 +16,87 @@ struct EditorToolbar: View {
     ]
 
     var body: some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 2) {
-                ForEach(AnnotationTool.allCases) { tool in
-                    toolButton(tool)
+        VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                toolGroup([.select, .arrow, .line, .rectangle, .ellipse, .pen, .highlighter])
+
+                groupDivider
+
+                toolGroup([.text, .counter])
+
+                groupDivider
+
+                toolGroup([.blur, .pixelate])
+
+                groupDivider
+
+                HStack(spacing: 2) {
+                    toolButton(.crop)
+                    backgroundButton
                 }
 
-                Divider().frame(height: 20).padding(.horizontal, 6)
+                groupDivider
 
-                backgroundButton
-
-                Divider().frame(height: 20).padding(.horizontal, 6)
-
-                Button {
-                    state.undo()
-                } label: {
-                    Image(systemName: "arrow.uturn.backward")
+                HStack(spacing: 2) {
+                    historyButton("arrow.uturn.backward", enabled: state.canUndo,
+                                  help: "Undo (⌘Z)") { state.undo() }
+                    historyButton("arrow.uturn.forward", enabled: state.canRedo,
+                                  help: "Redo (⇧⌘Z)") { state.redo() }
                 }
-                .buttonStyle(.borderless)
-                .disabled(!state.canUndo)
-                .help("Undo (⌘Z)")
-
-                Button {
-                    state.redo()
-                } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                }
-                .buttonStyle(.borderless)
-                .disabled(!state.canRedo)
-                .help("Redo (⇧⌘Z)")
 
                 Spacer(minLength: 8)
 
-                Button("Copy") { state.copyToClipboard() }
-                    .help("Copy flattened image (⌘C)")
-                Button("Save") { state.save() }
-                    .help("Save (⌘S)")
-                Button("Save As…") { state.saveAs() }
-                    .help("Save As (⇧⌘S)")
+                HStack(spacing: 6) {
+                    Button("Copy") { state.copyToClipboard() }
+                        .help("Copy flattened image (⌘C)")
+                    Button("Save") { state.save() }
+                        .help("Save (⌘S)")
+                    Button("Save As…") { state.saveAs() }
+                        .help("Save As (⇧⌘S)")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
 
                 DragThumbnail(state: state)
                     .frame(width: 44, height: 28)
                     .help("Drag the annotated image out as a PNG file")
             }
 
-            HStack(spacing: 10) {
-                ForEach(Array(Self.swatches.enumerated()), id: \.offset) { _, swatch in
-                    swatchButton(swatch)
+            HStack(spacing: 8) {
+                HStack(spacing: 8) {
+                    ForEach(Array(Self.swatches.enumerated()), id: \.offset) { _, swatch in
+                        swatchButton(swatch)
+                    }
                 }
 
                 Button {
                     ColorPanelBridge.shared.open(for: state)
                 } label: {
                     Image(systemName: "paintpalette")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .help("More colors…")
 
-                Divider().frame(height: 18)
+                groupDivider
 
-                Image(systemName: "lineweight")
-                    .foregroundStyle(.secondary)
-                Slider(value: Binding(get: { Double(state.strokeWidth) },
-                                      set: { state.strokeWidth = CGFloat($0) }),
-                       in: 2...10, step: 1)
-                    .frame(width: 110)
-                    .help("Stroke width")
-                Text("\(Int(state.strokeWidth))")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 16)
+                sliderCluster(symbol: "lineweight",
+                              help: "Stroke width",
+                              value: Binding(get: { Double(state.strokeWidth) },
+                                             set: { state.strokeWidth = CGFloat($0) }),
+                              range: 2...10,
+                              display: Int(state.strokeWidth))
 
-                Divider().frame(height: 18)
+                groupDivider
 
-                Image(systemName: "textformat.size")
-                    .foregroundStyle(.secondary)
-                Slider(value: Binding(get: { Double(state.fontSize) },
-                                      set: { state.fontSize = CGFloat($0) }),
-                       in: 10...72, step: 1)
-                    .frame(width: 110)
-                    .help("Text & counter size")
-                Text("\(Int(state.fontSize))")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22)
+                sliderCluster(symbol: "textformat.size",
+                              help: "Text & counter size",
+                              value: Binding(get: { Double(state.fontSize) },
+                                             set: { state.fontSize = CGFloat($0) }),
+                              range: 10...72,
+                              display: Int(state.fontSize))
 
                 Spacer(minLength: 0)
             }
@@ -108,34 +105,87 @@ struct EditorToolbar: View {
         .padding(.vertical, 8)
     }
 
+    private var groupDivider: some View {
+        Divider().frame(height: 18)
+    }
+
+    private func toolGroup(_ tools: [AnnotationTool]) -> some View {
+        HStack(spacing: 2) {
+            ForEach(tools) { tool in
+                toolButton(tool)
+            }
+        }
+    }
+
     private func toolButton(_ tool: AnnotationTool) -> some View {
-        Button {
+        let isSelected = state.tool == tool
+        return Button {
             state.tool = tool
         } label: {
             Image(systemName: tool.symbolName)
-                .frame(width: 24, height: 22)
-                .contentShape(Rectangle())
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isSelected ? Color.white : Color.primary)
+                .frame(width: 26, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(state.tool == tool ? Color.accentColor.opacity(0.25) : Color.clear)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor : Color.clear)
         )
+        .animation(.easeOut(duration: 0.15), value: isSelected)
         .help(tool.helpText)
     }
 
+    private func historyButton(_ symbol: String, enabled: Bool, help: String,
+                               action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .disabled(!enabled)
+        .help(help)
+    }
+
+    private func sliderCluster(symbol: String, help: String,
+                               value: Binding<Double>,
+                               range: ClosedRange<Double>,
+                               display: Int) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+            Slider(value: value, in: range, step: 1)
+                .controlSize(.small)
+                .frame(width: 104)
+                .help(help)
+            Text("\(display)")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 20, alignment: .trailing)
+        }
+    }
+
     private var backgroundButton: some View {
-        Button {
+        let isActive = state.background.isEnabled
+        return Button {
             showsBackgroundPopover.toggle()
         } label: {
             Image(systemName: "sparkles.rectangle.stack")
-                .frame(width: 24, height: 22)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(isActive ? Color.white : Color.primary)
+                .frame(width: 26, height: 24)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(.plain)
         .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(state.background.isEnabled ? Color.accentColor.opacity(0.25) : Color.clear)
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isActive ? Color.accentColor : Color.clear)
         )
+        .animation(.easeOut(duration: 0.15), value: isActive)
         .help("Background & padding")
         .popover(isPresented: $showsBackgroundPopover, arrowEdge: .bottom) {
             BackgroundStylePanel(state: state)
@@ -149,15 +199,18 @@ struct EditorToolbar: View {
         } label: {
             Circle()
                 .fill(Color(nsColor: swatch))
-                .frame(width: 16, height: 16)
-                .overlay(Circle().strokeBorder(Color.primary.opacity(0.35), lineWidth: 1))
+                .frame(width: 15, height: 15)
+                .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 1))
                 .overlay(
                     Circle()
-                        .strokeBorder(Color.accentColor, lineWidth: isSelected ? 2 : 0)
+                        .strokeBorder(Color.accentColor, lineWidth: isSelected ? 1.5 : 0)
                         .padding(-3)
                 )
+                .frame(width: 21, height: 21)
+                .contentShape(Circle())
         }
         .buttonStyle(.plain)
+        .animation(.easeOut(duration: 0.15), value: isSelected)
     }
 }
 
@@ -179,23 +232,29 @@ struct BackgroundStylePanel: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Text("Padding")
+                    .frame(width: 56, alignment: .leading)
                 Slider(value: Binding(get: { Double(state.background.padding) },
                                       set: { state.background.padding = CGFloat($0) }),
                        in: 0...120)
+                    .controlSize(.small)
                 Text("\(Int(state.background.padding))")
                     .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .trailing)
             }
 
-            HStack {
+            HStack(spacing: 8) {
                 Text("Corners")
+                    .frame(width: 56, alignment: .leading)
                 Slider(value: Binding(get: { Double(state.background.cornerRadius) },
                                       set: { state.background.cornerRadius = CGFloat($0) }),
                        in: 0...24)
+                    .controlSize(.small)
                 Text("\(Int(state.background.cornerRadius))")
                     .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .trailing)
             }
 
@@ -296,10 +355,10 @@ final class DragThumbnailView: NSView, NSDraggingSource {
 
     override func draw(_ dirtyRect: NSRect) {
         let box = bounds.insetBy(dx: 1, dy: 1)
-        let path = NSBezierPath(roundedRect: box, xRadius: 5, yRadius: 5)
-        NSColor.quaternaryLabelColor.setFill()
+        let path = NSBezierPath(roundedRect: box, xRadius: 6, yRadius: 6)
+        NSColor.quaternaryLabelColor.withAlphaComponent(0.5).setFill()
         path.fill()
-        NSColor.tertiaryLabelColor.setStroke()
+        NSColor.separatorColor.setStroke()
         path.lineWidth = 1
         path.stroke()
 

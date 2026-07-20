@@ -65,7 +65,7 @@ final class ScrollingCapturePanel: NSPanel {
     // MARK: - Layout
 
     private func buildContent() {
-        statusLabel.textColor = .white
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .medium)
 
         let capture = makeButton(symbol: "camera", tooltip: "Capture Step", action: #selector(captureTapped))
@@ -73,18 +73,30 @@ final class ScrollingCapturePanel: NSPanel {
         auto.setButtonType(.toggle)
         auto.alternateImage = symbolImage("pause.circle")
         autoButton = auto
-        let done = makeButton(symbol: "checkmark.circle", tooltip: "Done — stitch and save", action: #selector(doneTapped))
+        let done = makeButton(symbol: "checkmark.circle.fill", tooltip: "Done — stitch and save", action: #selector(doneTapped))
+        done.contentTintColor = .controlAccentColor
         let cancel = makeButton(symbol: "xmark.circle", tooltip: "Cancel", action: #selector(cancelTapped))
+        cancel.contentTintColor = .secondaryLabelColor
 
-        let stack = NSStackView(views: [capture, auto, done, cancel, statusLabel])
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        separator.heightAnchor.constraint(equalToConstant: 16).isActive = true
+
+        let stack = NSStackView(views: [capture, auto, done, cancel, separator, statusLabel])
         stack.orientation = .horizontal
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 14)
+        stack.alignment = .centerY
+        stack.spacing = 12
+        stack.edgeInsets = NSEdgeInsets(top: 8, left: 14, bottom: 8, right: 14)
 
-        let container = NSView()
+        let container = NSVisualEffectView()
+        container.material = .hudWindow
+        container.blendingMode = .behindWindow
+        container.state = .active
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
-        container.layer?.cornerRadius = 10
+        container.layer?.cornerRadius = 12
+        container.layer?.cornerCurve = .continuous
+        container.layer?.masksToBounds = true
         container.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -120,13 +132,13 @@ final class ScrollingCapturePanel: NSPanel {
         let button = NSButton(image: symbolImage(symbol) ?? NSImage(), target: self, action: action)
         button.isBordered = false
         button.bezelStyle = .regularSquare
-        button.contentTintColor = .white
+        button.contentTintColor = .labelColor
         button.toolTip = tooltip
         return button
     }
 
     private func symbolImage(_ name: String) -> NSImage? {
-        let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+        let config = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
         return NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(config)
     }

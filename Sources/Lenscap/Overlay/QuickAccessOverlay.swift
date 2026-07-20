@@ -49,8 +49,9 @@ final class QuickAccessOverlayController: NSObject {
         newPanel.alphaValue = 0
         newPanel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.22
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.duration = 0.28
+            // Quick ease-out with a hint of overshoot for a springy slide-in.
+            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 1.08, 0.25, 1)
             newPanel.animator().alphaValue = 1
             newPanel.animator().setFrame(NSRect(origin: finalOrigin, size: size), display: true)
         }
@@ -63,12 +64,11 @@ final class QuickAccessOverlayController: NSObject {
 
     private func buildContent(for item: CaptureItem) -> NSView {
         let padding: CGFloat = 8
-        let barHeight: CGFloat = 24
-        let spacing: CGFloat = 6
+        let barAreaHeight: CGFloat = 32
 
         let thumbSize = Self.fittedThumbnailSize(for: item.image)
         let width = max(thumbSize.width, 176) + padding * 2
-        let height = thumbSize.height + spacing + barHeight + padding * 2
+        let height = thumbSize.height + padding * 2 + 1 + barAreaHeight
 
         let container = QuickAccessHoverView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         container.onHoverChange = { [weak self] inside in
@@ -80,16 +80,16 @@ final class QuickAccessOverlayController: NSObject {
         effect.blendingMode = .behindWindow
         effect.state = .active
         effect.wantsLayer = true
-        effect.layer?.cornerRadius = 12
+        effect.layer?.cornerRadius = 14
         effect.layer?.masksToBounds = true
         effect.layer?.borderWidth = 1
-        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.15).cgColor
+        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
         effect.autoresizingMask = [.width, .height]
         container.addSubview(effect)
 
         // Thumbnail (drag source, double-click to open/annotate).
         let thumb = QuickAccessThumbnailView(frame: NSRect(x: (width - thumbSize.width) / 2,
-                                                           y: padding + barHeight + spacing,
+                                                           y: barAreaHeight + 1 + padding,
                                                            width: thumbSize.width,
                                                            height: thumbSize.height))
         if item.image.size.width > 1, item.image.size.height > 1 {
@@ -105,17 +105,24 @@ final class QuickAccessOverlayController: NSObject {
         thumb.layer?.cornerRadius = 6
         thumb.layer?.masksToBounds = true
         thumb.layer?.borderWidth = 1
-        thumb.layer?.borderColor = NSColor.white.withAlphaComponent(0.25).cgColor
-        thumb.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.3).cgColor
+        thumb.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
+        thumb.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
         thumb.toolTip = "Drag to another app — double-click to open"
         thumb.fileURLProvider = { [weak self] in self?.dragFileURL() }
         thumb.onDoubleClick = { [weak self] in self?.handleDoubleClick() }
         effect.addSubview(thumb)
 
+        // Hairline separator between thumbnail and action bar.
+        let separator = NSView(frame: NSRect(x: 0, y: barAreaHeight, width: width, height: 1))
+        separator.wantsLayer = true
+        separator.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
+        separator.autoresizingMask = [.width]
+        effect.addSubview(separator)
+
         // Action bar.
-        let bar = NSStackView(frame: NSRect(x: padding, y: padding, width: width - padding * 2, height: barHeight))
+        let bar = NSStackView(frame: NSRect(x: 6, y: (barAreaHeight - 26) / 2, width: width - 12, height: 26))
         bar.orientation = .horizontal
-        bar.spacing = 4
+        bar.spacing = 2
         bar.autoresizingMask = [.width]
 
         if item.kind == .screenshot {
@@ -136,19 +143,25 @@ final class QuickAccessOverlayController: NSObject {
         bar.addView(makeButton(symbol: "trash", tooltip: "Move to Trash",
                                action: #selector(trashAction)), in: .leading)
         bar.addView(makeButton(symbol: "xmark", tooltip: "Close",
-                               action: #selector(closeAction)), in: .trailing)
+                               action: #selector(closeAction), quiet: true), in: .trailing)
         effect.addSubview(bar)
 
         return container
     }
 
-    private func makeButton(symbol: String, tooltip: String, action: Selector) -> NSButton {
+    private func makeButton(symbol: String, tooltip: String, action: Selector, quiet: Bool = false) -> NSButton {
+        let pointSize: CGFloat = quiet ? 11 : 13
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium)) ?? NSImage()
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)) ?? NSImage()
         let button = QuickAccessBarButton(image: image, target: self, action: action)
         button.isBordered = false
         button.toolTip = tooltip
-        button.contentTintColor = .white
+        button.contentTintColor = quiet ? .tertiaryLabelColor : .labelColor
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: 26),
+            button.heightAnchor.constraint(equalToConstant: 26),
+        ])
         return button
     }
 
@@ -236,7 +249,7 @@ final class QuickAccessOverlayController: NSObject {
 
     private func updateSaveRevealButton() {
         saveRevealButton?.image = NSImage(systemSymbolName: "folder", accessibilityDescription: "Reveal in Finder")?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 12, weight: .medium))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .medium))
         saveRevealButton?.toolTip = "Reveal in Finder"
     }
 
@@ -389,9 +402,47 @@ final class QuickAccessHoverView: NSView {
     }
 }
 
-/// Button that responds to the first click even when the app is inactive.
+/// Button that responds to the first click even when the app is inactive,
+/// with a subtle rounded highlight on hover.
 final class QuickAccessBarButton: NSButton {
+    private var hoverTrackingArea: NSTrackingArea?
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        wantsLayer = true
+        layer?.cornerRadius = 6
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways],
+                                  owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setHoverHighlight(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setHoverHighlight(false)
+    }
+
+    private func setHoverHighlight(_ inside: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            layer?.backgroundColor = inside
+                ? NSColor.white.withAlphaComponent(0.16).cgColor
+                : NSColor.clear.cgColor
+        }
+    }
 }
 
 extension NSImage {

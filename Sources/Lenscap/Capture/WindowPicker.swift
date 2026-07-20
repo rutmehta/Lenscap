@@ -129,6 +129,12 @@ final class WindowPickerController {
         }
         return app
     }
+
+    /// Icon of the hovered window's app, for the label pill. Nil when unavailable.
+    var hoveredIcon: NSImage? {
+        guard let pid = hovered?.owningApplication?.processID else { return nil }
+        return NSRunningApplication(processIdentifier: pid)?.icon
+    }
 }
 
 final class WindowPickerWindow: NSWindow {
@@ -233,32 +239,69 @@ final class WindowPickerView: NSView {
         dim.setFill()
         path.fill()
 
-        NSColor.controlAccentColor.withAlphaComponent(0.18).setFill()
+        NSColor.controlAccentColor.withAlphaComponent(0.15).setFill()
         highlight.fill()
-        NSColor.controlAccentColor.setStroke()
-        let border = NSBezierPath(roundedRect: local.insetBy(dx: -1.5, dy: -1.5), xRadius: 9, yRadius: 9)
-        border.lineWidth = 3
-        border.stroke()
+
+        // Accent border with a soft matching glow so the hovered window pops.
+        let border = NSBezierPath(roundedRect: local.insetBy(dx: -1, dy: -1), xRadius: 9, yRadius: 9)
+        border.lineWidth = 2
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.saveGState()
+            context.setShadow(offset: .zero, blur: 12,
+                              color: NSColor.controlAccentColor.withAlphaComponent(0.7).cgColor)
+            NSColor.controlAccentColor.setStroke()
+            border.stroke()
+            context.restoreGState()
+        } else {
+            NSColor.controlAccentColor.setStroke()
+            border.stroke()
+        }
 
         if let label = controller.hoveredLabel {
-            drawLabel(label, in: local)
+            drawLabel(label, icon: controller.hoveredIcon, in: local)
         }
     }
 
-    private func drawLabel(_ text: String, in rect: NSRect) {
+    private func drawLabel(_ text: String, icon: NSImage?, in rect: NSRect) {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium),
             .foregroundColor: NSColor.white,
         ]
+        let iconSide: CGFloat = 16
+        let iconGap: CGFloat = 6
+        let iconSpan: CGFloat = icon == nil ? 0 : iconSide + iconGap
         var size = text.size(withAttributes: attributes)
-        size.width = min(size.width, rect.width - 32, bounds.width - 32)
-        var origin = NSPoint(x: rect.midX - size.width / 2, y: rect.maxY - size.height - 20)
-        origin.x = min(max(origin.x, bounds.minX + 16), bounds.maxX - size.width - 16)
+        size.width = min(size.width, rect.width - 32 - iconSpan, bounds.width - 32 - iconSpan)
+        var origin = NSPoint(x: rect.midX - (size.width + iconSpan) / 2 + iconSpan,
+                             y: rect.maxY - size.height - 20)
+        origin.x = min(max(origin.x, bounds.minX + 16 + iconSpan), bounds.maxX - size.width - 16)
         origin.y = min(max(origin.y, bounds.minY + 16), bounds.maxY - size.height - 16)
 
-        let background = NSRect(x: origin.x - 10, y: origin.y - 6, width: size.width + 20, height: size.height + 12)
-        NSColor.black.withAlphaComponent(0.75).setFill()
-        NSBezierPath(roundedRect: background, xRadius: 6, yRadius: 6).fill()
+        let background = NSRect(x: origin.x - 12 - iconSpan, y: origin.y - 7,
+                                width: size.width + iconSpan + 24, height: size.height + 14)
+        let pill = NSBezierPath(roundedRect: background,
+                                xRadius: background.height / 2, yRadius: background.height / 2)
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: -2), blur: 10,
+                              color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            NSColor.black.withAlphaComponent(0.72).setFill()
+            pill.fill()
+            context.restoreGState()
+        } else {
+            NSColor.black.withAlphaComponent(0.72).setFill()
+            pill.fill()
+        }
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        pill.lineWidth = 0.5
+        pill.stroke()
+
+        if let icon {
+            let iconRect = NSRect(x: origin.x - iconSpan,
+                                  y: background.midY - iconSide / 2,
+                                  width: iconSide, height: iconSide)
+            icon.draw(in: iconRect, from: .zero, operation: .sourceOver, fraction: 1)
+        }
         text.draw(in: NSRect(origin: origin, size: size), withAttributes: attributes)
     }
 
@@ -270,9 +313,23 @@ final class WindowPickerView: NSView {
         ]
         let size = text.size(withAttributes: attributes)
         let origin = NSPoint(x: bounds.midX - size.width / 2, y: bounds.maxY - 80)
-        let background = NSRect(x: origin.x - 12, y: origin.y - 7, width: size.width + 24, height: size.height + 14)
-        NSColor.black.withAlphaComponent(0.7).setFill()
-        NSBezierPath(roundedRect: background, xRadius: 8, yRadius: 8).fill()
+        let background = NSRect(x: origin.x - 14, y: origin.y - 8, width: size.width + 28, height: size.height + 16)
+        let chip = NSBezierPath(roundedRect: background,
+                                xRadius: background.height / 2, yRadius: background.height / 2)
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: -2), blur: 12,
+                              color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            chip.fill()
+            context.restoreGState()
+        } else {
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            chip.fill()
+        }
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        chip.lineWidth = 0.5
+        chip.stroke()
         text.draw(at: origin, withAttributes: attributes)
     }
 }

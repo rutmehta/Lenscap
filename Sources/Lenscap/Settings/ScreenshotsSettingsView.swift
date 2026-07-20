@@ -23,6 +23,7 @@ struct ScreenshotsSettingsView: View {
                     Text("\(Int(jpegQuality * 100))%")
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                        .frame(width: 40, alignment: .trailing)
                 }
                 .disabled(fileFormat != "jpg")
                 TextField("Filename prefix", text: $filenamePrefix)

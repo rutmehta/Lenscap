@@ -272,10 +272,16 @@ final class SelectionView: NSView {
             dim.setFill()
             path.fill()
 
+            // Dual stroke — dark outer, white inner — so the border reads on any background.
+            NSColor.black.withAlphaComponent(0.35).setStroke()
+            let outerBorder = NSBezierPath(rect: rect.insetBy(dx: -1.5, dy: -1.5))
+            outerBorder.lineWidth = 1
+            outerBorder.stroke()
             NSColor.white.setStroke()
             let border = NSBezierPath(rect: rect.insetBy(dx: -0.5, dy: -0.5))
             border.lineWidth = 1
             border.stroke()
+            drawCornerTicks(for: rect)
 
             drawSizeLabel(for: rect)
             if let currentPoint {
@@ -290,6 +296,27 @@ final class SelectionView: NSView {
             }
             drawPrompt()
         }
+    }
+
+    /// Short white ticks at the selection corners so the active rect reads at a glance.
+    private func drawCornerTicks(for rect: NSRect) {
+        guard rect.width >= 32, rect.height >= 32 else { return }
+        let length: CGFloat = 12
+        let ticks = NSBezierPath()
+        ticks.lineWidth = 2
+        let corners: [(NSPoint, CGFloat, CGFloat)] = [
+            (NSPoint(x: rect.minX, y: rect.minY), 1, 1),
+            (NSPoint(x: rect.maxX, y: rect.minY), -1, 1),
+            (NSPoint(x: rect.minX, y: rect.maxY), 1, -1),
+            (NSPoint(x: rect.maxX, y: rect.maxY), -1, -1),
+        ]
+        for (corner, dx, dy) in corners {
+            ticks.move(to: NSPoint(x: corner.x + dx * length, y: corner.y))
+            ticks.line(to: corner)
+            ticks.line(to: NSPoint(x: corner.x, y: corner.y + dy * length))
+        }
+        NSColor.white.setStroke()
+        ticks.stroke()
     }
 
     private func drawCrosshair(at point: NSPoint) {
@@ -324,10 +351,17 @@ final class SelectionView: NSView {
         let center = NSPoint(x: loupeRect.midX, y: loupeRect.midY)
 
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+
+        // Soft drop shadow behind the loupe so it floats above the dimmed screen.
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 10,
+                          color: NSColor.black.withAlphaComponent(0.45).cgColor)
+        NSColor.black.setFill()
+        NSBezierPath(ovalIn: loupeRect).fill()
+        context.restoreGState()
+
         context.saveGState()
         NSBezierPath(ovalIn: loupeRect).addClip()
-        NSColor.black.setFill()
-        loupeRect.fill()
         // Draw the whole capture scaled so the cursor's point lands at the loupe center;
         // crisp pixels, no smoothing.
         context.interpolationQuality = .none
@@ -335,6 +369,21 @@ final class SelectionView: NSView {
                                         y: center.y - point.y * zoom,
                                         width: bounds.width * zoom,
                                         height: bounds.height * zoom))
+
+        // Coordinate readout in a band along the bottom of the loupe, still inside the clip.
+        let coordText = "\(Int(point.x)), \(Int(point.y))"
+        let coordAttributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let coordSize = coordText.size(withAttributes: coordAttributes)
+        let band = NSRect(x: loupeRect.minX, y: loupeRect.minY,
+                          width: loupeRect.width, height: 18)
+        NSColor.black.withAlphaComponent(0.6).setFill()
+        band.fill()
+        coordText.draw(at: NSPoint(x: loupeRect.midX - coordSize.width / 2,
+                                   y: band.minY + (band.height - coordSize.height) / 2 + 2),
+                       withAttributes: coordAttributes)
         context.restoreGState()
 
         // Center pixel indicator.
@@ -351,9 +400,13 @@ final class SelectionView: NSView {
         marker.lineWidth = 1
         marker.stroke()
 
-        // Ring.
+        // Crisp ring: hairline dark outer edge plus a bright inner stroke.
+        NSColor.black.withAlphaComponent(0.5).setStroke()
+        let outerRing = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 0.25, dy: 0.25))
+        outerRing.lineWidth = 0.5
+        outerRing.stroke()
         NSColor.white.withAlphaComponent(0.9).setStroke()
-        let ring = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 1, dy: 1))
+        let ring = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 1.5, dy: 1.5))
         ring.lineWidth = 2
         ring.stroke()
     }
@@ -365,13 +418,26 @@ final class SelectionView: NSView {
             .foregroundColor: NSColor.white,
         ]
         let size = text.size(withAttributes: attributes)
-        var origin = NSPoint(x: rect.maxX - size.width - 6, y: rect.minY - size.height - 10)
-        if origin.y < 0 { origin.y = rect.minY + 6 }
-        if origin.x < 0 { origin.x = rect.minX + 6 }
+        // Centered below the selection, flipped above when clipped; keeps clear of the
+        // drag corner (where the cursor sits) far better than corner anchoring.
+        var origin = NSPoint(x: rect.midX - size.width / 2, y: rect.minY - size.height - 14)
+        if origin.y < bounds.minY + 4 { origin.y = rect.minY + 8 }
+        origin.x = min(max(origin.x, bounds.minX + 8), bounds.maxX - size.width - 8)
 
-        let background = NSRect(x: origin.x - 5, y: origin.y - 3, width: size.width + 10, height: size.height + 6)
-        NSColor.black.withAlphaComponent(0.7).setFill()
-        NSBezierPath(roundedRect: background, xRadius: 4, yRadius: 4).fill()
+        var background = NSRect(x: origin.x - 9, y: origin.y - 4, width: size.width + 18, height: size.height + 8)
+        // If the cursor would sit on the pill, hop to the top edge of the selection.
+        if let currentPoint, background.insetBy(dx: -12, dy: -12).contains(currentPoint) {
+            origin.y = min(rect.maxY + 14, bounds.maxY - size.height - 8)
+            background.origin.y = origin.y - 4
+        }
+
+        let pill = NSBezierPath(roundedRect: background,
+                                xRadius: background.height / 2, yRadius: background.height / 2)
+        NSColor.black.withAlphaComponent(0.72).setFill()
+        pill.fill()
+        NSColor.white.withAlphaComponent(0.22).setStroke()
+        pill.lineWidth = 0.5
+        pill.stroke()
         text.draw(at: origin, withAttributes: attributes)
     }
 
@@ -383,9 +449,25 @@ final class SelectionView: NSView {
         ]
         let size = text.size(withAttributes: attributes)
         let origin = NSPoint(x: bounds.midX - size.width / 2, y: bounds.maxY - 80)
-        let background = NSRect(x: origin.x - 12, y: origin.y - 7, width: size.width + 24, height: size.height + 14)
-        NSColor.black.withAlphaComponent(0.7).setFill()
-        NSBezierPath(roundedRect: background, xRadius: 8, yRadius: 8).fill()
+        let background = NSRect(x: origin.x - 14, y: origin.y - 8, width: size.width + 28, height: size.height + 16)
+        let chip = NSBezierPath(roundedRect: background,
+                                xRadius: background.height / 2, yRadius: background.height / 2)
+
+        // Heads-up chip: soft shadow, dark translucent fill, hairline highlight border.
+        if let context = NSGraphicsContext.current?.cgContext {
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: -2), blur: 12,
+                              color: NSColor.black.withAlphaComponent(0.35).cgColor)
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            chip.fill()
+            context.restoreGState()
+        } else {
+            NSColor.black.withAlphaComponent(0.65).setFill()
+            chip.fill()
+        }
+        NSColor.white.withAlphaComponent(0.18).setStroke()
+        chip.lineWidth = 0.5
+        chip.stroke()
         text.draw(at: origin, withAttributes: attributes)
     }
 }

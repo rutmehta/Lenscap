@@ -34,7 +34,7 @@ final class SettingsStore {
             Keys.jpegQuality: 0.9,
             Keys.filenamePrefix: "Lenscap",
             Keys.saveToDisk: true,
-            Keys.copyToClipboard: false,
+            Keys.copyToClipboard: true,
             Keys.showQuickAccess: true,
             Keys.quickAccessDuration: 8.0,
             Keys.playSound: true,

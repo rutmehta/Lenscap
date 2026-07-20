@@ -47,7 +47,11 @@ final class PinController {
         imageView.layer?.cornerRadius = 6
         imageView.layer?.masksToBounds = true
         imageView.layer?.borderWidth = 1
-        imageView.layer?.borderColor = NSColor.white.withAlphaComponent(0.35).cgColor
+        // Stronger border in light mode where a pale screenshot would otherwise blend in.
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        imageView.layer?.borderColor = isDark
+            ? NSColor.white.withAlphaComponent(0.3).cgColor
+            : NSColor.black.withAlphaComponent(0.25).cgColor
         panel.contentView = imageView
 
         // Gentle scale-in.
@@ -127,7 +131,8 @@ final class PinImageView: NSImageView {
         if event.modifierFlags.contains(.option) {
             panel.alphaValue = min(max(panel.alphaValue + delta, 0.25), 1.0)
         } else {
-            panel.setScale(panel.scale * (1 + delta))
+            // Line-based scroll wheels arrive in coarse steps; a short animation smooths them.
+            panel.setScale(panel.scale * (1 + delta), animated: !event.hasPreciseScrollingDeltas)
         }
     }
 
