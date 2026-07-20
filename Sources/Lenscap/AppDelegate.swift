@@ -7,7 +7,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppCoordinator.shared.start()
 
         if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
+            // Only trigger the system permission dialog once per install; afterwards the
+            // dialog can't grant anyway (granting happens in System Settings), so nagging
+            // on every launch just queues stale dialogs.
+            let requestedKey = "didRequestScreenCaptureAccess"
+            if !UserDefaults.standard.bool(forKey: requestedKey) {
+                UserDefaults.standard.set(true, forKey: requestedKey)
+                CGRequestScreenCaptureAccess()
+            } else {
+                HUD.show("Grant Screen Recording in System Settings, then relaunch Lenscap",
+                         symbol: "exclamationmark.shield", duration: 4)
+            }
         }
     }
 
