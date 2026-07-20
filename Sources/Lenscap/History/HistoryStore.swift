@@ -45,6 +45,12 @@ final class HistoryStore: ObservableObject {
         save()
     }
 
+    /// Empties the index without touching the files on disk.
+    func clearAll() {
+        entries.removeAll()
+        save()
+    }
+
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode([HistoryEntry].self, from: data)

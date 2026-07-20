@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 
 /// Result of an area selection. `rect` is in global AppKit coordinates (origin bottom-left);
 /// `screen` is the screen the drag happened on. `wantsFullScreen` is set when the user
@@ -17,6 +18,10 @@ final class SelectionOverlayController {
     private var windows: [SelectionWindow] = []
     private let completion: @MainActor (SelectionResult?) -> Void
     private var finished = false
+    private var keyMonitor: Any?
+
+    /// True while the space bar is held; dragging then moves the selection instead of resizing.
+    private(set) var isSpaceDown = false
 
     static func selectRect(prompt: String? = nil, completion: @escaping @MainActor (SelectionResult?) -> Void) {
         // Only one selection session at a time.
@@ -43,15 +48,75 @@ final class SelectionOverlayController {
         } else {
             windows.first?.makeKeyAndOrderFront(nil)
         }
+        installKeyMonitor()
+        loadLoupeSources()
     }
 
     func finish(with result: SelectionResult?) {
         guard !finished else { return }
         finished = true
+        if let keyMonitor {
+            NSEvent.removeMonitor(keyMonitor)
+            self.keyMonitor = nil
+        }
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         SelectionOverlayController.current = nil
         completion(result)
+    }
+
+    // MARK: - Key handling
+
+    /// Backup monitor so ⎋ cancels even when a non-key overlay window has the cursor,
+    /// and so space (move-selection modifier) is tracked without keyboard focus games.
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self, !self.finished else { return event }
+                switch (event.type, event.keyCode) {
+                case (.keyDown, 53): // Escape
+                    self.finish(with: nil)
+                    return nil
+                case (.keyDown, 49): // Space held → move mode
+                    self.isSpaceDown = true
+                    return nil
+                case (.keyUp, 49):
+                    self.isSpaceDown = false
+                    return nil
+                default:
+                    return event
+                }
+            }
+        }
+    }
+
+    // MARK: - Loupe source
+
+    /// One-shot full-display capture per screen, used as the magnifier's zoom source.
+    /// Excludes our own overlay windows so the loupe shows true, undimmed pixels.
+    /// Silently skipped when capture fails (e.g. no screen-recording permission).
+    private func loadLoupeSources() {
+        let excludedIDs = windows.map { CGWindowID($0.windowNumber) }
+        let targets = windows
+        Task { @MainActor in
+            guard let content = try? await CaptureEngine.shareableContent() else { return }
+            let excluded = content.windows.filter { excludedIDs.contains($0.windowID) }
+            for window in targets {
+                guard !self.finished else { return }
+                guard let display = try? CaptureEngine.display(for: window.assignedScreen, in: content) else { continue }
+                let filter = SCContentFilter(display: display, excludingWindows: excluded)
+                let config = SCStreamConfiguration()
+                let scale = CGFloat(filter.pointPixelScale)
+                config.width = Int(filter.contentRect.width * scale)
+                config.height = Int(filter.contentRect.height * scale)
+                config.showsCursor = false
+                config.captureResolution = .best
+                guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter,
+                                                                              configuration: config) else { continue }
+                guard !self.finished else { return }
+                (window.contentView as? SelectionView)?.loupeSource = image
+            }
+        }
     }
 }
 
@@ -84,7 +149,13 @@ final class SelectionView: NSView {
 
     private var dragStart: NSPoint?
     private var currentPoint: NSPoint?
+    private var isDragging = false
     private var trackingArea: NSTrackingArea?
+
+    /// Full-display capture used as the magnifier source; nil until it arrives (or never, without permission).
+    var loupeSource: CGImage? {
+        didSet { needsDisplay = true }
+    }
 
     init(frame: NSRect, controller: SelectionOverlayController, screen: NSScreen, prompt: String?) {
         self.controller = controller
@@ -119,14 +190,23 @@ final class SelectionView: NSView {
                       height: abs(dragStart.y - currentPoint.y))
     }
 
+    // MARK: - Mouse
+
     override func mouseDown(with event: NSEvent) {
         dragStart = convert(event.locationInWindow, from: nil)
         currentPoint = dragStart
+        isDragging = true
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        currentPoint = convert(event.locationInWindow, from: nil)
+        let point = convert(event.locationInWindow, from: nil)
+        if controller?.isSpaceDown == true, let previous = currentPoint, let start = dragStart {
+            // Space held: translate the whole selection instead of resizing it.
+            dragStart = NSPoint(x: start.x + (point.x - previous.x),
+                                y: start.y + (point.y - previous.y))
+        }
+        currentPoint = point
         needsDisplay = true
     }
 
@@ -135,7 +215,14 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
+    override func mouseExited(with event: NSEvent) {
+        guard !isDragging else { return }
+        currentPoint = nil
+        needsDisplay = true
+    }
+
     override func mouseUp(with event: NSEvent) {
+        isDragging = false
         guard let rect = selectionRect, rect.width >= 4, rect.height >= 4 else {
             controller?.finish(with: nil)
             return
@@ -149,22 +236,28 @@ final class SelectionView: NSView {
         controller?.finish(with: SelectionResult(rect: global, screen: screen))
     }
 
+    // MARK: - Keys
+
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
         case 53: // Escape
             controller?.finish(with: nil)
         case 36, 76: // Return / keypad Enter → full screen
             controller?.finish(with: SelectionResult(rect: screen.frame, screen: screen, wantsFullScreen: true))
+        case 49: // Space — handled by the controller's event monitor
+            break
         default:
             super.keyDown(with: event)
         }
     }
 
+    // MARK: - Drawing
+
     override func draw(_ dirtyRect: NSRect) {
         let dim = NSColor.black.withAlphaComponent(0.25)
 
-        if let rect = selectionRect, dragStart != nil {
-            // Dim everything except the selection.
+        if let rect = selectionRect, isDragging {
+            // Dim everything except the selection; prompt stays hidden while dragging.
             let path = NSBezierPath(rect: bounds)
             path.appendRect(rect)
             path.windingRule = .evenOdd
@@ -177,11 +270,15 @@ final class SelectionView: NSView {
             border.stroke()
 
             drawSizeLabel(for: rect)
+            if let currentPoint {
+                drawLoupe(at: currentPoint)
+            }
         } else {
             dim.setFill()
             bounds.fill()
             if let currentPoint {
                 drawCrosshair(at: currentPoint)
+                drawLoupe(at: currentPoint)
             }
             drawPrompt()
         }
@@ -201,9 +298,60 @@ final class SelectionView: NSView {
         vertical.stroke()
     }
 
+    /// Magnifier loupe: a circle showing an 8× zoom of the captured pixels around
+    /// the cursor, with a box marking the exact pixel under it. Skipped until the
+    /// one-shot display capture arrives.
+    private func drawLoupe(at point: NSPoint) {
+        guard let source = loupeSource, bounds.width > 0 else { return }
+        let diameter: CGFloat = 120
+        let zoom: CGFloat = 8
+        let offset: CGFloat = 24
+
+        var origin = NSPoint(x: point.x + offset, y: point.y + offset)
+        if origin.x + diameter > bounds.maxX { origin.x = point.x - offset - diameter }
+        if origin.y + diameter > bounds.maxY { origin.y = point.y - offset - diameter }
+        origin.x = min(max(origin.x, bounds.minX), bounds.maxX - diameter)
+        origin.y = min(max(origin.y, bounds.minY), bounds.maxY - diameter)
+        let loupeRect = NSRect(origin: origin, size: NSSize(width: diameter, height: diameter))
+        let center = NSPoint(x: loupeRect.midX, y: loupeRect.midY)
+
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        context.saveGState()
+        NSBezierPath(ovalIn: loupeRect).addClip()
+        NSColor.black.setFill()
+        loupeRect.fill()
+        // Draw the whole capture scaled so the cursor's point lands at the loupe center;
+        // crisp pixels, no smoothing.
+        context.interpolationQuality = .none
+        context.draw(source, in: CGRect(x: center.x - point.x * zoom,
+                                        y: center.y - point.y * zoom,
+                                        width: bounds.width * zoom,
+                                        height: bounds.height * zoom))
+        context.restoreGState()
+
+        // Center pixel indicator.
+        let pixelsPerPoint = CGFloat(source.width) / bounds.width
+        let pixelSide = max(zoom / max(pixelsPerPoint, 1), 2)
+        let pixelRect = NSRect(x: center.x - pixelSide / 2, y: center.y - pixelSide / 2,
+                               width: pixelSide, height: pixelSide)
+        NSColor.black.withAlphaComponent(0.8).setStroke()
+        let inner = NSBezierPath(rect: pixelRect.insetBy(dx: -1, dy: -1))
+        inner.lineWidth = 1
+        inner.stroke()
+        NSColor.white.setStroke()
+        let marker = NSBezierPath(rect: pixelRect)
+        marker.lineWidth = 1
+        marker.stroke()
+
+        // Ring.
+        NSColor.white.withAlphaComponent(0.9).setStroke()
+        let ring = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 1, dy: 1))
+        ring.lineWidth = 2
+        ring.stroke()
+    }
+
     private func drawSizeLabel(for rect: NSRect) {
-        let scale = screen.backingScaleFactor
-        let text = "\(Int(rect.width * scale)) × \(Int(rect.height * scale))"
+        let text = "\(Int(rect.width)) × \(Int(rect.height))"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium),
             .foregroundColor: NSColor.white,
