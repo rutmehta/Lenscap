@@ -25,7 +25,7 @@ final class AppCoordinator {
             self.afterDelay {
                 do {
                     let image = try await CaptureEngine.captureRect(result)
-                    self.ingest(cgImage: image, kind: .screenshot)
+                    self.ingest(cgImage: image, kind: .screenshot, scale: result.screen.backingScaleFactor)
                 } catch {
                     HUD.show("Capture failed: \(error.localizedDescription)")
                 }
@@ -39,7 +39,8 @@ final class AppCoordinator {
             self.afterDelay {
                 do {
                     let image = try await CaptureEngine.captureWindow(window)
-                    self.ingest(cgImage: image, kind: .screenshot)
+                    self.ingest(cgImage: image, kind: .screenshot,
+                                scale: CGFloat(image.width) / max(1, window.frame.width))
                 } catch {
                     HUD.show("Capture failed: \(error.localizedDescription)")
                 }
@@ -53,7 +54,7 @@ final class AppCoordinator {
         afterDelay {
             do {
                 let image = try await CaptureEngine.captureFullDisplay(containing: screen)
-                self.ingest(cgImage: image, kind: .screenshot)
+                self.ingest(cgImage: image, kind: .screenshot, scale: screen.backingScaleFactor)
             } catch {
                 HUD.show("Capture failed: \(error.localizedDescription)")
             }
@@ -94,6 +95,7 @@ final class AppCoordinator {
             return
         }
         SelectionOverlayController.selectRect(prompt: "Select an area to record — press ⏎ for the full screen") { result in
+            guard let result else { return }
             Task { @MainActor in
                 await ScreenRecorder.shared.start(selection: result, mode: mode)
             }
@@ -135,12 +137,15 @@ final class AppCoordinator {
     // MARK: - Post-capture pipeline
 
     /// Every still capture funnels through here: save, clipboard, sound, history, quick access.
-    func ingest(cgImage: CGImage, kind: CaptureItem.Kind) {
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    /// `scale` is the source display's points → pixels factor (nil when unknown).
+    func ingest(cgImage: CGImage, kind: CaptureItem.Kind, scale: CGFloat? = nil) {
+        let pointScale = max(1, scale ?? 1)
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: CGFloat(cgImage.width) / pointScale,
+                                                           height: CGFloat(cgImage.height) / pointScale))
         var item = CaptureItem(kind: kind, image: image, fileURL: nil)
 
         if settings.saveToDisk {
-            if let url = ImageWriter.save(cgImage: cgImage) {
+            if let url = ImageWriter.save(cgImage: cgImage, scale: scale) {
                 item.fileURL = url
                 history.add(url: url, kind: kind)
             }

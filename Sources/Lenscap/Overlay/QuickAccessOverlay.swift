@@ -187,7 +187,9 @@ final class QuickAccessOverlayController: NSObject {
         guard var item else { return }
         if let url = item.fileURL {
             NSWorkspace.shared.activateFileViewerSelecting([url])
-        } else if let cgImage = item.image.lenscapCGImage, let url = ImageWriter.save(cgImage: cgImage) {
+        } else if let cgImage = item.image.lenscapCGImage,
+                  let url = ImageWriter.save(cgImage: cgImage,
+                                             scale: CGFloat(cgImage.width) / max(1, item.image.size.width)) {
             item.fileURL = url
             self.item = item
             HistoryStore.shared.add(url: url, kind: item.kind)
@@ -207,6 +209,9 @@ final class QuickAccessOverlayController: NSObject {
     @objc private func trashAction() {
         if let url = item?.fileURL {
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
+            if let entry = HistoryStore.shared.entries.first(where: { $0.path == url.path }) {
+                HistoryStore.shared.remove(entry, deleteFile: false)
+            }
             HUD.show("Moved to Trash", symbol: "trash")
         }
         dismiss()
@@ -254,6 +259,16 @@ final class QuickAccessOverlayController: NSObject {
         return url
     }
 
+    /// Deletes the drag temp PNG after a grace period so an in-flight drop
+    /// target still has time to copy from it.
+    private func removeTempDragFile() {
+        guard let url = tempDragURL else { return }
+        tempDragURL = nil
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 30) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     // MARK: - Dismiss timer
 
     private func startDismissTimer(after interval: TimeInterval) {
@@ -287,7 +302,7 @@ final class QuickAccessOverlayController: NSObject {
         timerStartedAt = nil
         panel = nil
         item = nil
-        tempDragURL = nil
+        removeTempDragFile()
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             dismissing.animator().alphaValue = 0
@@ -304,7 +319,7 @@ final class QuickAccessOverlayController: NSObject {
         panel?.orderOut(nil)
         panel = nil
         item = nil
-        tempDragURL = nil
+        removeTempDragFile()
         saveRevealButton = nil
     }
 }

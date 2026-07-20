@@ -140,12 +140,34 @@ final class HotkeyManager {
         return KeyCombo(keyCode: parts[0], carbonModifiers: parts[1])
     }
 
+    /// The action (other than `action`) currently assigned `combo`, if any.
+    func conflictingAction(for combo: KeyCombo, excluding action: HotkeyAction) -> HotkeyAction? {
+        HotkeyAction.allCases.first { $0 != action && self.combo(for: $0) == combo }
+    }
+
     func setCombo(_ combo: KeyCombo?, for action: HotkeyAction) {
         if let combo {
             defaults.set("\(combo.keyCode),\(combo.carbonModifiers)", forKey: storageKey(for: action))
         } else {
             defaults.set("off", forKey: storageKey(for: action))
         }
+        registerAll()
+        if combo != nil, !handlers.values.contains(action) {
+            // RegisterEventHotKey failed — the combo is owned by another app or the OS.
+            Task { @MainActor in
+                HUD.show("Couldn't register \(combo?.displayString ?? "shortcut") — already in use",
+                         symbol: "keyboard")
+            }
+        }
+    }
+
+    /// Temporarily drops all global registrations (used while a shortcut is
+    /// being recorded, so registered combos reach the recorder as key events).
+    func pauseRegistrations() {
+        unregisterAll()
+    }
+
+    func resumeRegistrations() {
         registerAll()
     }
 

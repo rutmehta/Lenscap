@@ -26,6 +26,9 @@ final class HotkeyRecorderButton: NSButton {
     private var monitor: Any?
     private var isArmed = false
 
+    /// Only one recorder may be armed at a time across all rows.
+    private static weak var armedButton: HotkeyRecorderButton?
+
     init(hotkeyAction: HotkeyAction) {
         self.hotkeyAction = hotkeyAction
         super.init(frame: .zero)
@@ -63,7 +66,12 @@ final class HotkeyRecorderButton: NSButton {
     }
 
     private func arm() {
+        Self.armedButton?.disarm()
+        Self.armedButton = self
         isArmed = true
+        // Drop the app's global registrations while recording, otherwise pressing a
+        // registered combo fires its action instead of reaching this monitor.
+        HotkeyManager.shared.pauseRegistrations()
         refreshTitle()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated {
@@ -78,31 +86,42 @@ final class HotkeyRecorderButton: NSButton {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
-        isArmed = false
+        if isArmed {
+            isArmed = false
+            HotkeyManager.shared.resumeRegistrations()
+        }
+        if Self.armedButton === self { Self.armedButton = nil }
         refreshTitle()
     }
 
     /// Returns nil to swallow the event while armed.
     private func handle(_ event: NSEvent) -> NSEvent? {
-        switch Int(event.keyCode) {
-        case kVK_Escape:
-            disarm()
-        case kVK_Delete, kVK_ForwardDelete:
-            HotkeyManager.shared.setCombo(nil, for: hotkeyAction)
-            disarm()
-        default:
-            let modifiers = KeyCombo.carbonModifiers(from: event.modifierFlags)
-            let required = UInt32(cmdKey) | UInt32(controlKey) | UInt32(optionKey)
-            guard modifiers & required != 0 else {
+        let modifiers = KeyCombo.carbonModifiers(from: event.modifierFlags)
+        let commandLike = UInt32(cmdKey) | UInt32(controlKey) | UInt32(optionKey)
+
+        // Escape/Delete only cancel/clear when pressed bare — with ⌘/⌃/⌥ they
+        // fall through and are recorded like any other key.
+        guard modifiers & commandLike != 0 else {
+            switch Int(event.keyCode) {
+            case kVK_Escape:
+                disarm()
+            case kVK_Delete, kVK_ForwardDelete:
+                HotkeyManager.shared.setCombo(nil, for: hotkeyAction)
+                disarm()
+            default:
                 NSSound.beep()
-                return nil
             }
-            HotkeyManager.shared.setCombo(
-                KeyCombo(keyCode: UInt32(event.keyCode), carbonModifiers: modifiers),
-                for: hotkeyAction
-            )
-            disarm()
+            return nil
         }
+
+        let combo = KeyCombo(keyCode: UInt32(event.keyCode), carbonModifiers: modifiers)
+        if let conflict = HotkeyManager.shared.conflictingAction(for: combo, excluding: hotkeyAction) {
+            NSSound.beep()
+            HUD.show("\(combo.displayString) is already used by \(conflict.title)", symbol: "keyboard")
+            return nil
+        }
+        HotkeyManager.shared.setCombo(combo, for: hotkeyAction)
+        disarm()
         return nil
     }
 }

@@ -223,7 +223,14 @@ final class SelectionView: NSView {
 
     override func mouseUp(with event: NSEvent) {
         isDragging = false
-        guard let rect = selectionRect, rect.width >= 4, rect.height >= 4 else {
+        // Space-drag can push the selection past the screen edge; clamp to what
+        // is actually capturable so the source rect stays on the display.
+        guard let raw = selectionRect else {
+            controller?.finish(with: nil)
+            return
+        }
+        let rect = raw.intersection(bounds)
+        guard rect.width >= 4, rect.height >= 4 else {
             controller?.finish(with: nil)
             return
         }
@@ -242,8 +249,9 @@ final class SelectionView: NSView {
         switch event.keyCode {
         case 53: // Escape
             controller?.finish(with: nil)
-        case 36, 76: // Return / keypad Enter → full screen
-            controller?.finish(with: SelectionResult(rect: screen.frame, screen: screen, wantsFullScreen: true))
+        case 36, 76: // Return / keypad Enter → full screen (the one under the cursor)
+            let target = NSScreen.underMouse ?? screen
+            controller?.finish(with: SelectionResult(rect: target.frame, screen: target, wantsFullScreen: true))
         case 49: // Space — handled by the controller's event monitor
             break
         default:

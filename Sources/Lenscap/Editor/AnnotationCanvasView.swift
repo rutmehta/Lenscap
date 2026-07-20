@@ -158,6 +158,24 @@ final class AnnotationCanvasView: NSView {
         let padPx = state.background.padding * state.pixelScale
         ctx.translateBy(x: padPx, y: padPx)
 
+        // Clip annotations to the same rounded image rect the export uses
+        // (flatten renders into a base-sized context, then wrap applies the
+        // rounded-corner mask), so preview and export match at the edges.
+        let imageRect = CGRect(origin: .zero, size: state.baseSize)
+        let clipRadius = min(state.background.cornerRadius * state.pixelScale,
+                             min(imageRect.width, imageRect.height) / 2)
+        ctx.addPath(CGPath(roundedRect: imageRect,
+                           cornerWidth: clipRadius, cornerHeight: clipRadius,
+                           transform: nil))
+        ctx.clip()
+
+        if !patchCache.isEmpty {
+            // Evict patches for deleted/undone annotations.
+            let live = Set(state.annotations.lazy.filter(\.isRegionFilter).map(\.id))
+            if patchCache.count > live.count {
+                patchCache = patchCache.filter { live.contains($0.key) }
+            }
+        }
         for annotation in state.annotations where annotation.isRegionFilter {
             if let patch = patch(for: annotation) {
                 ctx.draw(patch.image, in: patch.rect)
@@ -350,6 +368,9 @@ final class AnnotationCanvasView: NSView {
             dragAction = .none
             draft = nil
             needsDisplay = true
+        }
+        if dragAction == .cropDraw, let rect = cropRect, rect.width <= 3 || rect.height <= 3 {
+            cropRect = nil // A plain click; don't leave a zero-size crop dimming everything.
         }
         guard dragAction == .draw, let draft else { return }
 

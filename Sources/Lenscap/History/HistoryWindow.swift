@@ -30,14 +30,18 @@ final class HistoryWindowController {
 @MainActor
 final class HistoryThumbnailCache {
     static let shared = HistoryThumbnailCache()
-    private let cache = NSCache<NSURL, NSImage>()
+    private let cache = NSCache<NSString, NSImage>()
 
     private init() {
         cache.countLimit = 300
     }
 
     func thumbnail(for url: URL) async -> NSImage? {
-        if let hit = cache.object(forKey: url as NSURL) { return hit }
+        // Key on path + mtime so an edited (overwritten) capture gets a fresh thumbnail.
+        let modified = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate] as? Date)
+            .flatMap { $0 }?.timeIntervalSince1970 ?? 0
+        let key = "\(url.path)|\(modified)" as NSString
+        if let hit = cache.object(forKey: key) { return hit }
         let request = QLThumbnailGenerator.Request(fileAt: url,
                                                    size: CGSize(width: 220, height: 160),
                                                    scale: 2,
@@ -46,7 +50,7 @@ final class HistoryThumbnailCache {
             return nil
         }
         let image = representation.nsImage
-        cache.setObject(image, forKey: url as NSURL)
+        cache.setObject(image, forKey: key)
         return image
     }
 }

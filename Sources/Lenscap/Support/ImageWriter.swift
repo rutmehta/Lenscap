@@ -4,20 +4,22 @@ import UniformTypeIdentifiers
 /// Saving, encoding, and clipboard handling for captured images.
 enum ImageWriter {
     /// Saves per current settings and returns the file URL, or nil on failure.
-    static func save(cgImage: CGImage) -> URL? {
+    /// `scale` is the source display's points → pixels factor; falls back to
+    /// NSScreen.main when the caller doesn't know it.
+    static func save(cgImage: CGImage, scale: CGFloat? = nil) -> URL? {
         let settings = SettingsStore.shared
         let directory = settings.saveDirectory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         var image = cgImage
         var scaleSuffix = ""
-        let screenScale = NSScreen.main?.backingScaleFactor ?? 2
+        let screenScale = scale ?? NSScreen.main?.backingScaleFactor ?? 2
         if settings.downscaleRetina, screenScale > 1 {
             if let downscaled = downscale(cgImage, by: 1 / screenScale) {
                 image = downscaled
             }
         } else if screenScale > 1 {
-            scaleSuffix = "@\(Int(screenScale))x"
+            scaleSuffix = "@\(Int(screenScale.rounded()))x"
         }
 
         let ext = settings.fileFormat == "jpg" ? "jpg" : "png"
@@ -36,7 +38,11 @@ enum ImageWriter {
     static func newFileURL(in directory: URL, prefix: String, suffix: String = "", ext: String) -> URL {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let base = "\(prefix) \(formatter.string(from: Date()))\(suffix)"
+        // "/" (and ":", which Finder maps to "/") would silently break the save path.
+        let safePrefix = prefix
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        let base = "\(safePrefix) \(formatter.string(from: Date()))\(suffix)"
         var url = directory.appendingPathComponent("\(base).\(ext)")
         var counter = 2
         while FileManager.default.fileExists(atPath: url.path) {

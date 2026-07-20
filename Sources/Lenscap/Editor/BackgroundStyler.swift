@@ -95,8 +95,12 @@ enum BackgroundStyler {
 
         if style.shadow {
             ctx.saveGState()
-            ctx.setShadow(offset: CGSize(width: 0, height: -6 * pixelScale),
-                          blur: 18 * pixelScale,
+            // Shadow offset/blur are specified in device space and ignore the CTM;
+            // pre-scale them so the scaled-down preview matches the export.
+            let ctm = ctx.ctm
+            let deviceScale = abs(ctm.a * ctm.d - ctm.b * ctm.c).squareRoot()
+            ctx.setShadow(offset: CGSize(width: 0, height: -6 * pixelScale * deviceScale),
+                          blur: 18 * pixelScale * deviceScale,
                           color: NSColor.black.withAlphaComponent(0.45).cgColor)
             ctx.addPath(rounded)
             ctx.setFillColor(NSColor.black.cgColor)

@@ -9,22 +9,22 @@ Lenscap lives in your menu bar and captures your screen with ScreenCaptureKit. E
 ## Features
 
 - **Area capture** — full-screen dimming overlay with crosshair drag-to-select across every display; press ⏎ during selection to grab the whole screen.
-- **Window capture** — capture a single window (currently grabs the window under the cursor; a hover-highlight picker is in progress).
+- **Window capture** — interactive picker: every display dims, the window under the cursor is hover-highlighted with its app name and title, click to capture, ⎋ to cancel.
 - **Fullscreen capture** — grab the entire display under the cursor.
-- **Timed capture** — optional 0–10 s countdown delay before any still capture.
+- **Timed capture** — optional countdown delay (off / 3 / 5 / 10 s) before area, window, and fullscreen captures.
 - **Capture Text (OCR)** — select an area and the recognized text (Vision framework, accurate mode) lands on your clipboard.
-- **Scrolling capture** *(experimental)* — stitch a scrolling area into one tall image. Currently a stub: the menu item exists but stitching is not implemented yet.
-- **Screen recording** *(in progress)* — record an area or the full screen to MP4 with optional system audio and configurable FPS. Selection flow and settings are wired; the SCStream/AVAssetWriter encoder is landing.
-- **GIF recording** *(in progress)* — same flow, GIF output.
-- **Annotation editor** — opens captures in an editor window. The full tool set (arrows, shapes, text, highlight, blur/pixelate, crop, background tool) is in progress; today it opens the capture for viewing.
+- **Scrolling capture** *(experimental)* — select a scrollable area, capture steps manually or let auto-scroll drive it (synthesized scroll events with bottom detection), and the frames are stitched into one tall image via overlap matching (capped at 40 frames / 20,000 px).
+- **Screen recording** — record an area or the full screen to H.264 MP4 with optional system audio, configurable FPS, a 3-2-1 countdown, and a floating recording HUD; Lenscap's own windows are excluded from the capture.
+- **GIF recording** — same flow with GIF output (30 s cap, longest side capped at 960 px).
+- **Annotation editor** — arrows, lines, rectangles, ellipses, pen, highlighter, text, counter badges, blur/pixelate, and crop, plus a background tool (padding, rounded corners, shadow, gradient backdrops), undo/redo, color and stroke controls, Copy/Save/Save As, and drag-out.
 - **Pin to screen** — float any capture (or the clipboard image) as an always-on-top panel; drag to move, double-click to close.
-- **Quick access overlay** *(in progress)* — post-capture thumbnail with quick actions; currently a HUD confirmation.
-- **History browser** — local index of your last 300 captures. The dedicated browser window is in progress; today "History" reveals your save folder in Finder.
-- **Hide desktop icons** *(in progress)* — declutter the desktop before capturing.
-- **Customizable global hotkeys** — every action can be rebound or disabled (persisted per action); the Settings UI for editing them is in progress.
+- **Quick access overlay** — post-capture thumbnail with quick actions (annotate, copy, save/reveal, pin, trash), drag-out to other apps, double-click to open, and a hover-aware auto-dismiss timer with configurable duration.
+- **History browser** — dedicated window with a thumbnail grid (QuickLook previews), an All/Screenshots/Recordings filter, and per-item actions, over a local index of your last 300 captures.
+- **Hide desktop icons** — declutter the desktop before capturing; toggled from the menu bar with wallpaper-matched cover windows.
+- **Customizable global hotkeys** — every action can be rebound or disabled in the Settings Shortcuts tab (persisted per action).
 - **Flexible output** — PNG or JPEG, `@2x` Retina naming or downscale-to-1x, custom filename prefix and save folder, clipboard copy, capture sound.
 
-Feature notes above are kept honest against the code: items marked *experimental* or *in progress* are stubbed or partial in the current source.
+Feature notes above are kept honest against the code: items marked *experimental* work but are still rough around the edges in the current source.
 
 ## Requirements
 

@@ -11,9 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
-        if ScreenRecorder.shared.isRecording {
-            Task { await ScreenRecorder.shared.stopAndSave() }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard ScreenRecorder.shared.isRecording else { return .terminateNow }
+        // Finish the in-flight recording (stop the stream, finalize the file,
+        // move it to the save folder) before letting the process exit.
+        Task { @MainActor in
+            await ScreenRecorder.shared.stopAndSave()
+            sender.reply(toApplicationShouldTerminate: true)
         }
+        return .terminateLater
     }
 }

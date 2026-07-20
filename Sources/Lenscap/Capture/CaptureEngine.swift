@@ -26,6 +26,19 @@ enum CaptureEngine {
         return display
     }
 
+    /// Excludes every window of this app (countdown HUD, quick access overlay,
+    /// scrolling-capture panel) from still captures, mirroring the recording path.
+    static func filterExcludingOwnWindows(display: SCDisplay,
+                                          content: SCShareableContent) -> SCContentFilter {
+        let pid = getpid()
+        // Excluding the application covers windows created after the filter too.
+        if let ownApp = content.applications.first(where: { $0.processID == pid }) {
+            return SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
+        }
+        let ownWindows = content.windows.filter { $0.owningApplication?.processID == pid }
+        return SCContentFilter(display: display, excludingWindows: ownWindows)
+    }
+
     /// Captures a rect given in global AppKit coordinates (origin bottom-left).
     static func captureRect(_ selection: SelectionResult) async throws -> CGImage {
         let screen = selection.screen
@@ -47,7 +60,7 @@ enum CaptureEngine {
         config.showsCursor = SettingsStore.shared.showCursorInScreenshots
         config.captureResolution = .best
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let filter = filterExcludingOwnWindows(display: display, content: content)
         return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
@@ -55,7 +68,7 @@ enum CaptureEngine {
         let content = try await shareableContent()
         let display = try display(for: screen, in: content)
 
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        let filter = filterExcludingOwnWindows(display: display, content: content)
         let config = SCStreamConfiguration()
         let scale = CGFloat(filter.pointPixelScale)
         config.width = Int(filter.contentRect.width * scale)

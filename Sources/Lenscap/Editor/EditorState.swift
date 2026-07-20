@@ -140,7 +140,10 @@ final class EditorState: ObservableObject {
     // MARK: - Export
 
     func flattenedImage() -> CGImage? {
-        AnnotationRenderer.flatten(base: baseImage,
+        // Fold any in-progress inline text edit into the annotations first, so
+        // Copy/Save/Save As/drag-out export what the user sees on screen.
+        canvas?.commitTextEditing()
+        return AnnotationRenderer.flatten(base: baseImage,
                                    annotations: annotations,
                                    background: background,
                                    pixelScale: pixelScale)
@@ -164,7 +167,8 @@ final class EditorState: ObservableObject {
         }
         let settings = SettingsStore.shared
         if let sourceURL {
-            let format = sourceURL.pathExtension.lowercased() == "jpg" ? "jpg" : "png"
+            let ext = sourceURL.pathExtension.lowercased()
+            let format = ext == "jpg" || ext == "jpeg" ? "jpg" : "png"
             guard let data = ImageWriter.encode(flat, format: format, jpegQuality: settings.jpegQuality),
                   (try? data.write(to: sourceURL)) != nil else {
                 HUD.show("Save failed")

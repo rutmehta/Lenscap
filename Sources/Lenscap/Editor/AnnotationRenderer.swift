@@ -136,8 +136,12 @@ enum AnnotationRenderer {
         let circle = CGRect(x: annotation.start.x - radius, y: annotation.start.y - radius,
                             width: radius * 2, height: radius * 2)
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: -radius * 0.12),
-                      blur: radius * 0.3,
+        // Shadow parameters live in device space; pre-scale by the CTM so the
+        // preview (drawn scaled down) matches the export (identity CTM).
+        let ctm = ctx.ctm
+        let deviceScale = abs(ctm.a * ctm.d - ctm.b * ctm.c).squareRoot()
+        ctx.setShadow(offset: CGSize(width: 0, height: -radius * 0.12 * deviceScale),
+                      blur: radius * 0.3 * deviceScale,
                       color: NSColor.black.withAlphaComponent(0.4).cgColor)
         ctx.setFillColor(annotation.color.cgColor)
         ctx.fillEllipse(in: circle)

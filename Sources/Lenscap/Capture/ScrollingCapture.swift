@@ -169,12 +169,13 @@ final class ScrollingCaptureController {
     private func finish() {
         guard panel != nil else { return }
         stopAutoScroll()
+        let scale = selection?.screen.backingScaleFactor
         closePanel()
         let captured = frames
         frames = []
         guard !captured.isEmpty else { return }
         if captured.count == 1 {
-            AppCoordinator.shared.ingest(cgImage: captured[0], kind: .screenshot)
+            AppCoordinator.shared.ingest(cgImage: captured[0], kind: .screenshot, scale: scale)
             return
         }
         if captured.count > 3 {
@@ -187,7 +188,7 @@ final class ScrollingCaptureController {
                     HUD.show("Stitching failed", symbol: "exclamationmark.triangle")
                     return
                 }
-                AppCoordinator.shared.ingest(cgImage: image, kind: .screenshot)
+                AppCoordinator.shared.ingest(cgImage: image, kind: .screenshot, scale: scale)
                 if result.cappedAtMax {
                     HUD.show("Stitched image capped at \(Self.maxStitchedHeight) px", symbol: "ruler")
                 }

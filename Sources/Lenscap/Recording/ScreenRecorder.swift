@@ -108,6 +108,9 @@ final class ScreenRecorder: NSObject {
                     self?.handleStreamFailure(error)
                 }
             }
+            // Track the output now so the catch below can cancel it (deleting the
+            // already-created temp .mp4) when SCStream setup or startCapture fails.
+            output = out
 
             let newStream = SCStream(filter: filter, configuration: config, delegate: out)
             try newStream.addStreamOutput(out, type: .screen, sampleHandlerQueue: out.sampleQueue)
