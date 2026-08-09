@@ -4,7 +4,21 @@
 
 Lenscap lives in your menu bar and captures your screen with ScreenCaptureKit. Everything happens on your Mac: captures go to a local folder and/or your clipboard, history is a local JSON index, and the app never touches the network.
 
-> **Screenshots coming soon.**
+> **Screenshots + demo GIF** (area-capture overlay, annotation editor, history browser, quick-access overlay) — being added as part of the release pass. See *Known limitations*.
+
+## Install
+
+**Download the DMG** from the [latest release](https://github.com/rutmehta/Lenscap/releases/latest) — mount it and drag **Lenscap.app** into `/Applications`.
+
+Or build from source (no dependencies — a single Swift Package):
+
+```sh
+git clone https://github.com/rutmehta/Lenscap.git
+cd Lenscap
+bash Scripts/make-app.sh        # produces dist/Lenscap.app + dist/Lenscap-1.0.0.dmg
+```
+
+> **First launch:** release DMGs are ad-hoc signed (not yet notarized), so the first time macOS will ask you to **right-click → Open** the app. This is called out honestly under *Known limitations* — it goes away once notarization is configured.
 
 ## Features
 
@@ -26,28 +40,19 @@ Lenscap lives in your menu bar and captures your screen with ScreenCaptureKit. E
 
 Feature notes above are kept honest against the code: items marked *experimental* work but are still rough around the edges in the current source.
 
+## Known limitations
+
+Being honest about the rough edges before you send this to a subreddit:
+
+- **Scrolling capture is experimental.** Auto-scroll relies on synthesized scroll events plus overlap matching for stitching, and is capped at 40 frames / 20,000 px. It works, but can produce imperfect seams on complex or nested-scroll pages. Treat it as a preview feature.
+- **Apple Silicon only (arm64).** The prebuilt DMG is a thin arm64 binary — it runs on Apple Silicon Macs (M1+), not on Intel Macs. A universal (x86_64 + arm64) build can be produced from source if there's demand.
+- **Not notarized (with signed, working notarization support).** `Scripts/make-app.sh` can sign with a real identity and notarize+staple the DMG when a Developer ID certificate and `xcrun notarytool` credentials are configured. Until then releases are ad-hoc signed, so fresh Macs show a Gatekeeper warning and need right-click → Open. This is the one thing that needs an Apple Developer account + credentials on the build machine.
+- **GIF recording** is soft-capped at 30 s and 960 px longest side to keep file sizes sane.
+
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
 - Xcode 15+ / Swift 5.9 toolchain to build from source
-
-## Install / Build
-
-Lenscap has no external dependencies — it is a single Swift Package.
-
-```sh
-git clone https://github.com/rutmehta/Lenscap.git
-cd Lenscap
-swift build -c release
-```
-
-To get a proper menu-bar app bundle:
-
-```sh
-bash Scripts/make-app.sh
-```
-
-This produces `dist/Lenscap.app` (ad-hoc signed). On first launch, right-click the app and choose **Open** since it is not notarized.
 
 ## Permissions
 
