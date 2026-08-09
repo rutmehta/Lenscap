@@ -1,6 +1,4 @@
-<?xml version="1.0" encoding="utf-8" standalone="yes"?><!-- sparkle-sign-warning:
-IMPORTANT: This file was signed by Sparkle. Any modifications to this file requires re-signing this file with generate_appcast or sign_update! The signed signature will be embedded at the end of this file.
---><!--
+<?xml version="1.0" encoding="utf-8" standalone="yes"?><!--
   Lenscap Sparkle appcast feed.
   Served from: https://raw.githubusercontent.com/rutmehta/Lenscap/main/appcast.xml
 
@@ -24,10 +22,11 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
       <sparkle:version>1.0.0</sparkle:version>
       <sparkle:shortVersionString>1.0.0</sparkle:shortVersionString>
       <description>Lenscap 1.0.0</description>
-      <enclosure url="https://github.com/rutmehta/Lenscap/releases/download/v1.0.0/Lenscap-1.0.0.dmg" sparkle:edSignature="arJ4SbFEW6f/tmQSe8HnBUFI9GRG5HbdngcYxTP+i0TDZ+yGSGC8XjGVDDLsLF+qMWxmFxoHEX+YPtfx8x83Cg==" sparkle:length="1862021" type="application/octet-stream"></enclosure>
+      <enclosure url="https://github.com/rutmehta/Lenscap/releases/download/v1.0.0/Lenscap-1.0.0.dmg" sparkle:edSignature="oEYDXNNNHBe+4rC+xB8BV72cRt0Gixmj6flyQ/I2m3zBFy6JfZDsi1QTmJza5/OMETTDTeJr51CYiRJt5XuFAw==" sparkle:length="1861954" type="application/octet-stream"></enclosure>
     </item>
   </channel>
-</rss><!-- sparkle-signatures:
-edSignature: +scPwwtMzPB1NK0I20MTjaPh0ue5tDdEp5WBRl7Apuc31WEa+o2dDrPjrfBb3qlMQz7YG6CN3Kn4iTNv1jeiBg==
-length: 1801
+</rss>
+<!-- sparkle-signatures:
+edSignature: XoORMmQwQUe1KuZThPY0WYIWFDWVjUZz77DkXUWetH6CPk6PtbVJO7sLT3t3KWNCk5o7Tk7GnWyK8UXI0LSdBg==
+length: 1566
 -->
