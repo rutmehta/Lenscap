@@ -62,6 +62,13 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(item("History…", #selector(openHistory), symbol: "clock.arrow.circlepath", action: .openHistory))
+        menu.addItem(.separator())
+
+        let checkForUpdates = NSMenuItem(title: "Check for Updates…",
+                                         action: #selector(UpdaterController.checkForUpdates(_:)),
+                                         keyEquivalent: "u")
+        checkForUpdates.target = UpdaterController.shared
+        menu.addItem(checkForUpdates)
         menu.addItem(item("Settings…", #selector(openSettings), symbol: "gearshape"))
         menu.addItem(.separator())
 

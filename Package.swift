@@ -4,9 +4,17 @@ import PackageDescription
 let package = Package(
     name: "Lenscap",
     platforms: [.macOS(.v14)],
+    dependencies: [
+        // Sparkle powers automatic + manual update checks. Version 2.x uses SPM
+        // natively; the framework is embedded + code-signed by Scripts/make-app.sh.
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.6.0")
+    ],
     targets: [
         .executableTarget(
             name: "Lenscap",
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ],
             path: "Sources/Lenscap"
         )
     ]

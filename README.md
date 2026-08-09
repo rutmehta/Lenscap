@@ -2,7 +2,7 @@
 
 **Open-source, 100% local screenshot & screen-recording app for macOS — a CleanShot X-style tool with no cloud, no accounts, no analytics.**
 
-Lenscap lives in your menu bar and captures your screen with ScreenCaptureKit. Everything happens on your Mac: captures go to a local folder and/or your clipboard, history is a local JSON index, and the app never touches the network.
+Lenscap lives in your menu bar and captures your screen with ScreenCaptureKit. Everything happens on your Mac: captures go to a local folder and/or your clipboard, history is a local JSON index, and the app never phones home — the *only* network traffic is an optional Sparkle update check against this repo's appcast (see **Auto-updates**). No analytics, no telemetry, no accounts.
 
 > **Screenshots + demo GIF** (area-capture overlay, annotation editor, history browser, quick-access overlay) — being added as part of the release pass. See *Known limitations*.
 
@@ -49,6 +49,31 @@ Being honest about the rough edges before you send this to a subreddit:
 - **Not notarized (with signed, working notarization support).** `Scripts/make-app.sh` can sign with a real identity and notarize+staple the DMG when a Developer ID certificate and `xcrun notarytool` credentials are configured. Until then releases are ad-hoc signed, so fresh Macs show a Gatekeeper warning and need right-click → Open. This is the one thing that needs an Apple Developer account + credentials on the build machine.
 - **GIF recording** is soft-capped at 30 s and 960 px longest side to keep file sizes sane.
 
+## Auto-updates
+
+Lenscap uses **[Sparkle](https://sparkle-project.org)** for updates. On first launch it asks whether you'd like to be checked for updates automatically; you can also trigger a check any time from the menu bar via **Check for Updates…** (⌘U). The feed lives at [appcast.xml](appcast.xml) and is served from this GitHub repo (no CDN, no third-party tracking).
+
+A release is produced by:
+
+```sh
+# 1. Set the signing seed (private; never committed) and pick a version.
+export LENSCAP_EDDSA_KEY_FILE="$HOME/.lenscap-dist-keys/sparkle_seed.b64"
+export PRODUCT_VERSION=1.1.0
+# 2. Build the DMG, sign it, update + re-sign appcast.xml.
+Scripts/release-update.sh
+# 3. Manually tag + create the GitHub release and attach the DMG (see the
+#    script's printed next-steps; it does not push or publish on its own).
+```
+
+Signing keys, the appcast format, and the release flow are documented in
+[`Scripts/release-update.sh`](Scripts/release-update.sh) and
+[`Config/branding.sh`](Config/branding.sh).
+
+> The app is currently **version 1.0.0** with no newer release published, so
+> update checks report "up to date". When you're ready to ship, run the flow
+> above rather than hand-editing `appcast.xml` — it must be re-signed after any
+> change or Sparkle will reject it.
+
 ## Requirements
 
 - macOS 14.0 (Sonoma) or later
@@ -61,7 +86,7 @@ Being honest about the rough edges before you send this to a subreddit:
 | **Screen Recording** | All captures and recordings (ScreenCaptureKit) | Yes — grant in System Settings → Privacy & Security → Screen Recording |
 | **Accessibility** | Auto-scroll during scrolling capture | Optional (only for scrolling capture) |
 
-Lenscap never asks for network, contacts, or anything else — there is nothing to phone home to.
+Lenscap never asks for contacts, location, or anything invasive. The only network access is the optional Sparkle update check against this repo (a single GET to the appcast — no analytics, no telemetry, nothing else phone-home).
 
 ## Default shortcuts
 
@@ -112,7 +137,7 @@ Sources/Lenscap/
 ## FAQ
 
 **Why no cloud?**
-By design. Screenshots often contain sensitive information; Lenscap keeps everything on your Mac. There are no accounts, no uploads, no analytics, and no network code at all.
+By design. Screenshots often contain sensitive information; Lenscap keeps everything on your Mac. There are no accounts, no uploads, no analytics. The only network request in the entire app is the optional Sparkle update check against this repo's appcast (toggleable — see Auto-updates).
 
 **Where do my captures go?**
 `~/Pictures/Lenscap` by default (configurable), and optionally the clipboard. History metadata lives in `~/Library/Application Support/Lenscap/history.json`.
@@ -122,7 +147,7 @@ ScreenCaptureKit requires it for any capture — even stills. macOS may require 
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `swift build`, match the existing style, no external dependencies.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Short version: `swift build`, match the existing style. Sparkle (updates) is the only external dependency, added via Swift Package Manager.
 
 ## License
 

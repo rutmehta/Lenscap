@@ -20,12 +20,14 @@ You can also open `Package.swift` directly in Xcode.
 - Match the existing code: 4-space indentation, `// MARK: -` sections, doc
   comments only where behavior is non-obvious.
 - `@MainActor` on classes that touch AppKit/UI.
-- **No external dependencies.** AppKit/SwiftUI plus system frameworks
-  (ScreenCaptureKit, AVFoundation, Vision, Carbon hotkeys) only.
+- **One external dependency: Sparkle** (for auto-updates), pulled in via Swift
+  Package Manager. Everything else is AppKit/SwiftUI plus system frameworks
+  (ScreenCaptureKit, AVFoundation, Vision, Carbon hotkeys).
 - Lenscap runs as a non-bundled executable during development: never use
   `UNUserNotificationCenter`; use the existing `HUD` for user feedback.
-- Everything stays 100% local — no networking, analytics, or telemetry of any
-  kind will be accepted.
+- Everything stays local — the only network traffic is the optional Sparkle
+  update check (no analytics, telemetry, or other phone-home code of any kind
+  will be accepted).
 
 ## Pull requests
 

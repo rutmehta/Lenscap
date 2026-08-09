@@ -3,6 +3,10 @@ import CoreGraphics
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Start Sparkle before anything else so update checks can run in the
+        // background while the user is capturing screenshots / recording.
+        UpdaterController.shared.start()
+
         SettingsStore.shared.registerDefaults()
         AppCoordinator.shared.start()
 
