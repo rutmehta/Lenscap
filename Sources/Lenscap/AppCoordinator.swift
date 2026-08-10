@@ -1,4 +1,5 @@
 import AppKit
+import LenscapPermission
 import ScreenCaptureKit
 
 /// Central hub that wires the menu bar, hotkeys, and capture pipeline together.
@@ -17,9 +18,31 @@ final class AppCoordinator {
         HotkeyManager.shared.registerAll()
     }
 
+    // MARK: - Screen Recording permission gate (single choke point)
+
+    /// Every user-initiated capture funnels through here. Returns `true` to run
+    /// the capture; when access is missing it presents the durable permission
+    /// panel and returns `false`. Once the user grants access and returns / taps
+    /// Retry, the panel calls `retry`, which re-enters the originating action.
+    ///
+    /// This centralizes the gate instead of patching eight call sites, and it
+    /// always re-reads `CGPreflight` (a fresh controller each call) so the old
+    /// one-shot-flag trap cannot recur.
+    private func beginScreenCapture(retry: @escaping @MainActor () -> Void) -> Bool {
+        let controller = ScreenCapturePermissionController(provider: LiveScreenCapturePermissionProvider())
+        guard controller.canCapture else {
+            ScreenCapturePermissionPresenter.shared.present(pending: {
+                Task { @MainActor in retry() }
+            })
+            return false
+        }
+        return true
+    }
+
     // MARK: - Still captures
 
     func captureArea() {
+        guard beginScreenCapture(retry: { [weak self] in self?.captureArea() }) else { return }
         SelectionOverlayController.selectRect(prompt: "Drag to select an area") { [weak self] result in
             guard let self, let result else { return }
             self.afterDelay {
@@ -34,6 +57,7 @@ final class AppCoordinator {
     }
 
     func captureWindow() {
+        guard beginScreenCapture(retry: { [weak self] in self?.captureWindow() }) else { return }
         WindowPickerController.pickWindow { [weak self] window in
             guard let self, let window else { return }
             self.afterDelay {
@@ -49,6 +73,7 @@ final class AppCoordinator {
     }
 
     func captureFullscreen() {
+        guard beginScreenCapture(retry: { [weak self] in self?.captureFullscreen() }) else { return }
         let screen = NSScreen.underMouse ?? NSScreen.main
         guard let screen else { return }
         afterDelay {
@@ -62,6 +87,7 @@ final class AppCoordinator {
     }
 
     func captureText() {
+        guard beginScreenCapture(retry: { [weak self] in self?.captureText() }) else { return }
         SelectionOverlayController.selectRect(prompt: "Select an area to copy its text") { result in
             guard let result else { return }
             Task { @MainActor in
@@ -84,6 +110,7 @@ final class AppCoordinator {
     }
 
     func startScrollingCapture() {
+        guard beginScreenCapture(retry: { [weak self] in self?.startScrollingCapture() }) else { return }
         ScrollingCaptureController.shared.begin()
     }
 
@@ -94,6 +121,7 @@ final class AppCoordinator {
             Task { await ScreenRecorder.shared.stopAndSave() }
             return
         }
+        guard beginScreenCapture(retry: { [weak self] in self?.toggleRecording(mode: mode) }) else { return }
         SelectionOverlayController.selectRect(prompt: "Select an area to record — press ⏎ for the full screen") { result in
             guard let result else { return }
             Task { @MainActor in

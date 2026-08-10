@@ -1,5 +1,4 @@
 import AppKit
-import CoreGraphics
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -10,19 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SettingsStore.shared.registerDefaults()
         AppCoordinator.shared.start()
 
-        if !CGPreflightScreenCaptureAccess() {
-            // Only trigger the system permission dialog once per install; afterwards the
-            // dialog can't grant anyway (granting happens in System Settings), so nagging
-            // on every launch just queues stale dialogs.
-            let requestedKey = "didRequestScreenCaptureAccess"
-            if !UserDefaults.standard.bool(forKey: requestedKey) {
-                UserDefaults.standard.set(true, forKey: requestedKey)
-                CGRequestScreenCaptureAccess()
-            } else {
-                HUD.show("Grant Screen Recording in System Settings, then relaunch Lenscap",
-                         symbol: "exclamationmark.shield", duration: 4)
-            }
-        }
+        // Screen Recording permission is intentionally NOT requested or nagged
+        // at launch. The old design called CGRequestScreenCaptureAccess once and
+        // cached a `didRequestScreenCaptureAccess` default; combined with a
+        // missing TCC grant this trapped the user with a stale flag and a
+        // transient HUD. The durable permission panel is now surfaced by the
+        // gate inside AppCoordinator on every user-initiated capture, where the
+        // system dialog can actually be acted on.
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

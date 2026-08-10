@@ -13,9 +13,19 @@ let package = Package(
         .executableTarget(
             name: "Lenscap",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                .target(name: "LenscapPermission")
             ],
             path: "Sources/Lenscap"
+        ),
+        .target(
+            name: "LenscapPermission",
+            path: "Sources/LenscapPermission"
+        ),
+        .testTarget(
+            name: "LenscapPermissionTests",
+            dependencies: ["LenscapPermission"],
+            path: "Tests/LenscapPermissionTests"
         )
     ]
 )

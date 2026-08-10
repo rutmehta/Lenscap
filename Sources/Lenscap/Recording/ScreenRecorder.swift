@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import CoreGraphics
 import ScreenCaptureKit
 
 enum RecordingMode {
@@ -28,6 +29,16 @@ final class ScreenRecorder: NSObject {
         guard !isRecording, !isStarting else { return }
         guard let screen = selection?.screen ?? NSScreen.main else {
             HUD.show("No screen available to record", symbol: "record.circle")
+            return
+        }
+        // Never attempt a doomed SCStream without Screen Recording permission.
+        // Surface the durable permission panel; on grant, re-enter this start.
+        guard CGPreflightScreenCaptureAccess() else {
+            ScreenCapturePermissionPresenter.shared.present(pending: {
+                Task { @MainActor in
+                    await self.start(selection: selection, mode: mode)
+                }
+            })
             return
         }
         isStarting = true

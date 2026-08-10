@@ -131,7 +131,10 @@ Sources/Lenscap/
 ├── History/                          # Local capture history (JSON index + browser)
 ├── Settings/SettingsWindow.swift     # Settings UI
 ├── Models/CaptureItem.swift          # Capture model
-└── Support/                          # Settings store, hotkeys, HUD toast, image writer
+├── Support/                          # Settings store, hotkeys, HUD toast, image writer
+├── Support/ScreenCapturePermissionProvider.swift  # Live CGPreflight/CGRequest wrapper
+├── Support/ScreenCapturePermissionPresenter.swift # Durable "grant access" permission panel
+└── ../LenscapPermission/             # Testable permission controller + provider protocol
 ```
 
 ## FAQ
@@ -143,7 +146,19 @@ By design. Screenshots often contain sensitive information; Lenscap keeps everyt
 `~/Pictures/Lenscap` by default (configurable), and optionally the clipboard. History metadata lives in `~/Library/Application Support/Lenscap/history.json`.
 
 **Why does macOS ask for Screen Recording permission?**
-ScreenCaptureKit requires it for any capture — even stills. macOS may require you to relaunch the app after granting it.
+ScreenCaptureKit requires it for any capture — even stills. Lenscap gates every capture/recording on a live `CGPreflightScreenCaptureAccess()` check. If access is missing, it shows a durable panel offering **Request Access**, **Open Screen Recording Settings…**, and **Retry** — it never silently captures a black frame, and it never traps you behind a stale "granted" flag. Once you grant access and return to Lenscap (or tap Retry), the pending capture runs automatically. macOS may require you to relaunch the app after a first-time grant.
+
+**Screen Recording permission (manual verification)**
+Lenscap re-checks the permission on every capture, so you don't have to relaunch — but a freshly installed build that changed its code signature (e.g. rebuilding from source) may lose the previously granted TCC permission. To confirm/restore it:
+
+1. Open **System Settings → Privacy & Security → Screen Recording**.
+2. Make sure **Lenscap** is enabled (toggle on if not), then launch a capture.
+3. If macOS doesn't pick up the grant, take the surest path:
+   ```sh
+   tccutil reset ScreenCapture com.rutmehta.lenscap
+   ```
+   then relaunch Lenscap and grant access when prompted. This clears any stale TCC row so the next grant is recorded for the current build.
+   *(Changing the app's code-signing identity replaces its TCC grant — that's expected until Developer ID notarization is back in place.)*
 
 ## Contributing
 

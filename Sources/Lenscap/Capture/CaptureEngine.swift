@@ -1,22 +1,36 @@
 import AppKit
+import CoreGraphics
 import ScreenCaptureKit
 
 enum CaptureError: LocalizedError {
     case displayNotFound
     case windowGone
+    case screenCapturePermissionDenied
 
     var errorDescription: String? {
         switch self {
         case .displayNotFound: return "Could not find the display to capture."
         case .windowGone: return "The selected window is no longer available."
+        case .screenCapturePermissionDenied:
+            return "Screen Recording permission is required to capture."
         }
     }
 }
 
 /// Still-image capture built on ScreenCaptureKit.
 enum CaptureEngine {
+    /// ScreenCaptureKit never returns a real frame (it yields a black/empty
+    /// image) without Screen Recording permission. Guard the TCC-touching calls
+    /// so we fail fast with a clear error instead of silently capturing nothing.
+    static func requireScreenCapturePermission() throws {
+        guard CGPreflightScreenCaptureAccess() else {
+            throw CaptureError.screenCapturePermissionDenied
+        }
+    }
+
     static func shareableContent() async throws -> SCShareableContent {
-        try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        try requireScreenCapturePermission()
+        return try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
     }
 
     static func display(for screen: NSScreen, in content: SCShareableContent) throws -> SCDisplay {
