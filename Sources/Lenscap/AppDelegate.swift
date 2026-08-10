@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         SettingsStore.shared.registerDefaults()
         AppCoordinator.shared.start()
+        DebugSnapshotController.captureIfRequested()
 
         // Screen Recording permission is intentionally NOT requested or nagged
         // at launch. The old design called CGRequestScreenCaptureAccess once and

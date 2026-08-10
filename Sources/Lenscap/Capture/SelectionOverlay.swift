@@ -1,5 +1,5 @@
 import AppKit
-import ScreenCaptureKit
+
 
 /// Result of an area selection. `rect` is in global AppKit coordinates (origin bottom-left);
 /// `screen` is the screen the drag happened on. `wantsFullScreen` is set when the user
@@ -49,7 +49,6 @@ final class SelectionOverlayController {
             windows.first?.makeKeyAndOrderFront(nil)
         }
         installKeyMonitor()
-        loadLoupeSources()
     }
 
     func finish(with result: SelectionResult?) {
@@ -90,34 +89,6 @@ final class SelectionOverlayController {
         }
     }
 
-    // MARK: - Loupe source
-
-    /// One-shot full-display capture per screen, used as the magnifier's zoom source.
-    /// Excludes our own overlay windows so the loupe shows true, undimmed pixels.
-    /// Silently skipped when capture fails (e.g. no screen-recording permission).
-    private func loadLoupeSources() {
-        let excludedIDs = windows.map { CGWindowID($0.windowNumber) }
-        let targets = windows
-        Task { @MainActor in
-            guard let content = try? await CaptureEngine.shareableContent() else { return }
-            let excluded = content.windows.filter { excludedIDs.contains($0.windowID) }
-            for window in targets {
-                guard !self.finished else { return }
-                guard let display = try? CaptureEngine.display(for: window.assignedScreen, in: content) else { continue }
-                let filter = SCContentFilter(display: display, excludingWindows: excluded)
-                let config = SCStreamConfiguration()
-                let scale = CGFloat(filter.pointPixelScale)
-                config.width = Int(filter.contentRect.width * scale)
-                config.height = Int(filter.contentRect.height * scale)
-                config.showsCursor = false
-                config.captureResolution = .best
-                guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter,
-                                                                              configuration: config) else { continue }
-                guard !self.finished else { return }
-                (window.contentView as? SelectionView)?.loupeSource = image
-            }
-        }
-    }
 }
 
 final class SelectionWindow: NSWindow {
@@ -152,12 +123,8 @@ final class SelectionView: NSView {
     private var isDragging = false
     private var trackingArea: NSTrackingArea?
 
-    /// Full-display capture used as the magnifier source; nil until it arrives (or never, without permission).
-    var loupeSource: CGImage? {
-        didSet { needsDisplay = true }
-    }
 
-    init(frame: NSRect, controller: SelectionOverlayController, screen: NSScreen, prompt: String?) {
+    init(frame: NSRect, controller: SelectionOverlayController?, screen: NSScreen, prompt: String?) {
         self.controller = controller
         self.screen = screen
         self.prompt = prompt
@@ -165,6 +132,15 @@ final class SelectionView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Snapshot-only setup used by DebugSnapshotController. It exercises the same
+    /// selection drawing code without synthesizing a screenshot of the desktop.
+    func setDebugSelection(start: NSPoint, current: NSPoint) {
+        dragStart = start
+        currentPoint = current
+        isDragging = true
+        needsDisplay = true
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -284,15 +260,11 @@ final class SelectionView: NSView {
             drawCornerTicks(for: rect)
 
             drawSizeLabel(for: rect)
-            if let currentPoint {
-                drawLoupe(at: currentPoint)
-            }
         } else {
             dim.setFill()
             bounds.fill()
             if let currentPoint {
                 drawCrosshair(at: currentPoint)
-                drawLoupe(at: currentPoint)
             }
             drawPrompt()
         }
@@ -333,83 +305,6 @@ final class SelectionView: NSView {
         vertical.stroke()
     }
 
-    /// Magnifier loupe: a circle showing an 8× zoom of the captured pixels around
-    /// the cursor, with a box marking the exact pixel under it. Skipped until the
-    /// one-shot display capture arrives.
-    private func drawLoupe(at point: NSPoint) {
-        guard let source = loupeSource, bounds.width > 0 else { return }
-        let diameter: CGFloat = 120
-        let zoom: CGFloat = 8
-        let offset: CGFloat = 24
-
-        var origin = NSPoint(x: point.x + offset, y: point.y + offset)
-        if origin.x + diameter > bounds.maxX { origin.x = point.x - offset - diameter }
-        if origin.y + diameter > bounds.maxY { origin.y = point.y - offset - diameter }
-        origin.x = min(max(origin.x, bounds.minX), bounds.maxX - diameter)
-        origin.y = min(max(origin.y, bounds.minY), bounds.maxY - diameter)
-        let loupeRect = NSRect(origin: origin, size: NSSize(width: diameter, height: diameter))
-        let center = NSPoint(x: loupeRect.midX, y: loupeRect.midY)
-
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-
-        // Soft drop shadow behind the loupe so it floats above the dimmed screen.
-        context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 10,
-                          color: NSColor.black.withAlphaComponent(0.45).cgColor)
-        NSColor.black.setFill()
-        NSBezierPath(ovalIn: loupeRect).fill()
-        context.restoreGState()
-
-        context.saveGState()
-        NSBezierPath(ovalIn: loupeRect).addClip()
-        // Draw the whole capture scaled so the cursor's point lands at the loupe center;
-        // crisp pixels, no smoothing.
-        context.interpolationQuality = .none
-        context.draw(source, in: CGRect(x: center.x - point.x * zoom,
-                                        y: center.y - point.y * zoom,
-                                        width: bounds.width * zoom,
-                                        height: bounds.height * zoom))
-
-        // Coordinate readout in a band along the bottom of the loupe, still inside the clip.
-        let coordText = "\(Int(point.x)), \(Int(point.y))"
-        let coordAttributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedDigitSystemFont(ofSize: 9, weight: .medium),
-            .foregroundColor: NSColor.white,
-        ]
-        let coordSize = coordText.size(withAttributes: coordAttributes)
-        let band = NSRect(x: loupeRect.minX, y: loupeRect.minY,
-                          width: loupeRect.width, height: 18)
-        NSColor.black.withAlphaComponent(0.6).setFill()
-        band.fill()
-        coordText.draw(at: NSPoint(x: loupeRect.midX - coordSize.width / 2,
-                                   y: band.minY + (band.height - coordSize.height) / 2 + 2),
-                       withAttributes: coordAttributes)
-        context.restoreGState()
-
-        // Center pixel indicator.
-        let pixelsPerPoint = CGFloat(source.width) / bounds.width
-        let pixelSide = max(zoom / max(pixelsPerPoint, 1), 2)
-        let pixelRect = NSRect(x: center.x - pixelSide / 2, y: center.y - pixelSide / 2,
-                               width: pixelSide, height: pixelSide)
-        NSColor.black.withAlphaComponent(0.8).setStroke()
-        let inner = NSBezierPath(rect: pixelRect.insetBy(dx: -1, dy: -1))
-        inner.lineWidth = 1
-        inner.stroke()
-        NSColor.white.setStroke()
-        let marker = NSBezierPath(rect: pixelRect)
-        marker.lineWidth = 1
-        marker.stroke()
-
-        // Crisp ring: hairline dark outer edge plus a bright inner stroke.
-        NSColor.black.withAlphaComponent(0.5).setStroke()
-        let outerRing = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 0.25, dy: 0.25))
-        outerRing.lineWidth = 0.5
-        outerRing.stroke()
-        NSColor.white.withAlphaComponent(0.9).setStroke()
-        let ring = NSBezierPath(ovalIn: loupeRect.insetBy(dx: 1.5, dy: 1.5))
-        ring.lineWidth = 2
-        ring.stroke()
-    }
 
     private func drawSizeLabel(for rect: NSRect) {
         let text = "\(Int(rect.width)) × \(Int(rect.height))"

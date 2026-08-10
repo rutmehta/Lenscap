@@ -1,4 +1,5 @@
 import AppKit
+import LenscapUXCore
 import UniformTypeIdentifiers
 
 /// Floating post-capture thumbnail in the bottom-left corner of the main screen
@@ -14,8 +15,8 @@ final class QuickAccessOverlayController: NSObject {
     private weak var saveRevealButton: NSButton?
 
     private var dismissTask: Task<Void, Never>?
-    private var remaining: TimeInterval = 0
-    private var timerStartedAt: Date?
+    private let lifecycle = QuickAccessLifecycle(now: { Date.timeIntervalSinceReferenceDate })
+    private var generation = 0
 
     private override init() { super.init() }
 
@@ -23,9 +24,12 @@ final class QuickAccessOverlayController: NSObject {
 
     func show(_ item: CaptureItem) {
         teardown()
+        generation &+= 1
+        let captureGeneration = generation
         self.item = item
 
-        let content = buildContent(for: item)
+        lifecycle.show(id: captureGeneration, duration: max(2, SettingsStore.shared.quickAccessDuration))
+        let content = buildContent(for: item, generation: captureGeneration)
         let size = content.frame.size
         let newPanel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                                styleMask: [.borderless, .nonactivatingPanel],
@@ -57,12 +61,21 @@ final class QuickAccessOverlayController: NSObject {
         }
 
         panel = newPanel
-        startDismissTimer(after: max(2, SettingsStore.shared.quickAccessDuration))
+        startDismissTimer(after: max(2, SettingsStore.shared.quickAccessDuration), generation: captureGeneration)
+    }
+
+    func contentViewForSnapshot() -> NSView? {
+        panel?.contentView
+    }
+
+    func dismissForSnapshot() {
+        guard let current = lifecycle.currentCaptureID else { return }
+        dismissCurrent(generation: current)
     }
 
     // MARK: - Content
 
-    private func buildContent(for item: CaptureItem) -> NSView {
+    private func buildContent(for item: CaptureItem, generation: Int) -> NSView {
         let padding: CGFloat = 8
         let barAreaHeight: CGFloat = 32
 
@@ -72,7 +85,7 @@ final class QuickAccessOverlayController: NSObject {
 
         let container = QuickAccessHoverView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         container.onHoverChange = { [weak self] inside in
-            if inside { self?.pauseDismissTimer() } else { self?.resumeDismissTimer() }
+            self?.handleHover(inside, generation: generation)
         }
 
         let effect = NSVisualEffectView(frame: container.bounds)
@@ -108,8 +121,12 @@ final class QuickAccessOverlayController: NSObject {
         thumb.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
         thumb.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
         thumb.toolTip = "Drag to another app — double-click to open"
-        thumb.fileURLProvider = { [weak self] in self?.dragFileURL() }
-        thumb.onDoubleClick = { [weak self] in self?.handleDoubleClick() }
+        thumb.fileURLProvider = { [weak self] in self?.dragFileURL(for: generation) }
+        thumb.onDragBegan = { [weak self] in self?.handleDragBegan(generation: generation) }
+        thumb.onDragEnded = { [weak self] succeeded in
+            self?.handleDragEnded(succeeded: succeeded, generation: generation)
+        }
+        thumb.onDoubleClick = { [weak self] in self?.handleDoubleClick(generation: generation) }
         effect.addSubview(thumb)
 
         // Hairline separator between thumbnail and action bar.
@@ -127,33 +144,35 @@ final class QuickAccessOverlayController: NSObject {
 
         if item.kind == .screenshot {
             bar.addView(makeButton(symbol: "pencil.tip.crop.circle", tooltip: "Annotate",
-                                   action: #selector(annotateAction)), in: .leading)
+                                   action: #selector(annotateAction(_:)), generation: generation), in: .leading)
         }
         bar.addView(makeButton(symbol: "doc.on.doc", tooltip: "Copy",
-                               action: #selector(copyAction)), in: .leading)
+                               action: #selector(copyAction(_:)), generation: generation), in: .leading)
         let saveReveal = makeButton(symbol: item.fileURL != nil ? "folder" : "square.and.arrow.down",
                                     tooltip: item.fileURL != nil ? "Reveal in Finder" : "Save",
-                                    action: #selector(saveRevealAction))
+                                    action: #selector(saveRevealAction(_:)), generation: generation)
         saveRevealButton = saveReveal
         bar.addView(saveReveal, in: .leading)
         if item.kind == .screenshot {
             bar.addView(makeButton(symbol: "pin", tooltip: "Pin to screen",
-                                   action: #selector(pinAction)), in: .leading)
+                                   action: #selector(pinAction(_:)), generation: generation), in: .leading)
         }
         bar.addView(makeButton(symbol: "trash", tooltip: "Move to Trash",
-                               action: #selector(trashAction)), in: .leading)
+                               action: #selector(trashAction(_:)), generation: generation), in: .leading)
         bar.addView(makeButton(symbol: "xmark", tooltip: "Close",
-                               action: #selector(closeAction), quiet: true), in: .trailing)
+                               action: #selector(closeAction(_:)), generation: generation, quiet: true), in: .trailing)
         effect.addSubview(bar)
 
         return container
     }
 
-    private func makeButton(symbol: String, tooltip: String, action: Selector, quiet: Bool = false) -> NSButton {
+    private func makeButton(symbol: String, tooltip: String, action: Selector,
+                            generation: Int, quiet: Bool = false) -> NSButton {
         let pointSize: CGFloat = quiet ? 11 : 13
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)) ?? NSImage()
         let button = QuickAccessBarButton(image: image, target: self, action: action)
+        button.tag = generation
         button.isBordered = false
         button.toolTip = tooltip
         button.contentTintColor = quiet ? .tertiaryLabelColor : .labelColor
@@ -174,29 +193,33 @@ final class QuickAccessOverlayController: NSObject {
 
     // MARK: - Actions
 
-    @objc private func annotateAction() {
+    @objc private func annotateAction(_ sender: NSButton) {
+        guard isCurrent(sender) else { return }
         guard let item, item.kind == .screenshot else { return }
         AppCoordinator.shared.openEditor(image: item.image, sourceURL: item.fileURL)
-        dismiss()
+        dismissCurrent(generation: sender.tag)
     }
 
-    @objc private func copyAction() {
-        guard let item else { return }
+    @objc private func copyAction(_ sender: NSButton) {
+        guard isCurrent(sender), let item else { return }
+        var succeeded = false
         switch item.kind {
         case .screenshot:
             guard let cgImage = item.image.lenscapCGImage else { return }
-            ImageWriter.copyToClipboard(cgImage: cgImage, fileURL: item.fileURL)
-            HUD.show("Copied to clipboard", symbol: "doc.on.clipboard")
+            succeeded = ImageWriter.copyToClipboard(cgImage: cgImage, fileURL: item.fileURL)
+            if succeeded { HUD.show("Copied to clipboard", symbol: "doc.on.clipboard") }
         case .video, .gif:
             guard let url = item.fileURL else { return }
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            (url as NSURL).write(to: pasteboard)
-            HUD.show("File copied to clipboard", symbol: "doc.on.clipboard")
+            succeeded = pasteboard.writeObjects([url as NSURL])
+            if succeeded { HUD.show("File copied to clipboard", symbol: "doc.on.clipboard") }
         }
+        if succeeded { dismissCurrent(generation: sender.tag) }
     }
 
-    @objc private func saveRevealAction() {
+    @objc private func saveRevealAction(_ sender: NSButton) {
+        guard isCurrent(sender) else { return }
         guard var item else { return }
         if let url = item.fileURL {
             NSWorkspace.shared.activateFileViewerSelecting([url])
@@ -213,13 +236,15 @@ final class QuickAccessOverlayController: NSObject {
         }
     }
 
-    @objc private func pinAction() {
+    @objc private func pinAction(_ sender: NSButton) {
+        guard isCurrent(sender) else { return }
         guard let item, item.kind == .screenshot else { return }
         PinController.pin(image: item.image, at: nil)
-        dismiss()
+        dismissCurrent(generation: sender.tag)
     }
 
-    @objc private func trashAction() {
+    @objc private func trashAction(_ sender: NSButton) {
+        guard isCurrent(sender) else { return }
         if let url = item?.fileURL {
             try? FileManager.default.trashItem(at: url, resultingItemURL: nil)
             if let entry = HistoryStore.shared.entries.first(where: { $0.path == url.path }) {
@@ -227,23 +252,26 @@ final class QuickAccessOverlayController: NSObject {
             }
             HUD.show("Moved to Trash", symbol: "trash")
         }
-        dismiss()
+        dismissCurrent(generation: sender.tag)
     }
 
-    @objc private func closeAction() {
-        dismiss()
+    @objc private func closeAction(_ sender: NSButton) {
+        guard isCurrent(sender) else { return }
+        dismissCurrent(generation: sender.tag)
     }
 
-    private func handleDoubleClick() {
+    private func handleDoubleClick(generation: Int) {
+        guard generation == self.generation else { return }
         guard let item else { return }
         switch item.kind {
         case .screenshot:
-            annotateAction()
+            AppCoordinator.shared.openEditor(image: item.image, sourceURL: item.fileURL)
+            dismissCurrent(generation: generation)
         case .video, .gif:
             if let url = item.fileURL {
                 NSWorkspace.shared.open(url)
             }
-            dismiss()
+            dismissCurrent(generation: generation)
         }
     }
 
@@ -256,7 +284,8 @@ final class QuickAccessOverlayController: NSObject {
     // MARK: - Drag support
 
     /// URL handed to the drag session; writes a temporary PNG when the capture is unsaved.
-    private func dragFileURL() -> URL? {
+    private func dragFileURL(for generation: Int) -> URL? {
+        guard generation == self.generation else { return nil }
         guard let item else { return nil }
         if let url = item.fileURL { return url }
         if let cached = tempDragURL { return cached }
@@ -282,37 +311,62 @@ final class QuickAccessOverlayController: NSObject {
         }
     }
 
-    // MARK: - Dismiss timer
+    // MARK: - Dismiss timer and lifecycle transitions
 
-    private func startDismissTimer(after interval: TimeInterval) {
+    private func isCurrent(_ sender: NSButton) -> Bool {
+        sender.tag == generation && panel != nil
+    }
+
+    private func startDismissTimer(after interval: TimeInterval, generation: Int) {
         dismissTask?.cancel()
-        remaining = interval
-        timerStartedAt = Date()
         dismissTask = Task { @MainActor [weak self] in
+            guard interval > 0 else { return }
             try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            self?.dismiss()
+            guard let self, self.lifecycle.timerFired(for: generation) else { return }
+            self.dismissPanel(generation: generation)
         }
     }
 
-    private func pauseDismissTimer() {
-        guard let startedAt = timerStartedAt else { return }
-        dismissTask?.cancel()
-        dismissTask = nil
-        remaining = max(1, remaining - Date().timeIntervalSince(startedAt))
-        timerStartedAt = nil
+    private func handleHover(_ inside: Bool, generation: Int) {
+        guard generation == self.generation, panel != nil else { return }
+        if inside {
+            dismissTask?.cancel()
+            dismissTask = nil
+        }
+        guard let remaining = lifecycle.hoverChanged(for: generation, inside: inside) else { return }
+        if !inside {
+            startDismissTimer(after: remaining, generation: generation)
+        }
     }
 
-    private func resumeDismissTimer() {
-        guard panel != nil, dismissTask == nil else { return }
-        startDismissTimer(after: remaining)
-    }
-
-    private func dismiss() {
-        guard let dismissing = panel else { return }
+    private func handleDragBegan(generation: Int) {
+        guard generation == self.generation, panel != nil else { return }
         dismissTask?.cancel()
         dismissTask = nil
-        timerStartedAt = nil
+        _ = lifecycle.beginDrag(for: generation)
+    }
+
+    private func handleDragEnded(succeeded: Bool, generation: Int) {
+        guard generation == self.generation, panel != nil else { return }
+        let outcome: QuickAccessLifecycle.DragOutcome = succeeded ? .succeeded : .cancelled
+        if lifecycle.finishDrag(for: generation, outcome: outcome) {
+            dismissPanel(generation: generation)
+        } else if let remaining = lifecycle.remainingTime(for: generation) {
+            startDismissTimer(after: remaining, generation: generation)
+        }
+    }
+
+    private func dismissCurrent(generation: Int) {
+        guard generation == self.generation, panel != nil else { return }
+        guard lifecycle.dismiss(for: generation) else { return }
+        dismissPanel(generation: generation)
+    }
+
+    private func dismissPanel(generation: Int) {
+        guard generation == self.generation, let dismissing = panel else { return }
+        dismissTask?.cancel()
+        dismissTask = nil
         panel = nil
         item = nil
         removeTempDragFile()
@@ -328,7 +382,9 @@ final class QuickAccessOverlayController: NSObject {
     private func teardown() {
         dismissTask?.cancel()
         dismissTask = nil
-        timerStartedAt = nil
+        if lifecycle.currentCaptureID == generation {
+            _ = lifecycle.dismiss(for: generation)
+        }
         panel?.orderOut(nil)
         panel = nil
         item = nil
@@ -342,6 +398,8 @@ final class QuickAccessOverlayController: NSObject {
 /// Thumbnail that acts as a file drag source and reports double-clicks.
 final class QuickAccessThumbnailView: NSImageView, NSDraggingSource {
     var fileURLProvider: (() -> URL?)?
+    var onDragBegan: (() -> Void)?
+    var onDragEnded: ((Bool) -> Void)?
     var onDoubleClick: (() -> Void)?
     private var mouseDownEvent: NSEvent?
 
@@ -363,6 +421,7 @@ final class QuickAccessThumbnailView: NSImageView, NSDraggingSource {
         guard hypot(dx, dy) > 4 else { return }
         mouseDownEvent = nil
         guard let url = fileURLProvider?() else { return }
+        onDragBegan?()
         let draggingItem = NSDraggingItem(pasteboardWriter: url as NSURL)
         draggingItem.setDraggingFrame(bounds, contents: image)
         beginDraggingSession(with: [draggingItem], event: downEvent, source: self)
@@ -375,6 +434,11 @@ final class QuickAccessThumbnailView: NSImageView, NSDraggingSource {
     nonisolated func draggingSession(_ session: NSDraggingSession,
                                      sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
         .copy
+    }
+
+    func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint,
+                         operation: NSDragOperation) {
+        onDragEnded?(operation != [])
     }
 }
 

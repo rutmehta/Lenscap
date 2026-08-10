@@ -14,9 +14,14 @@ let package = Package(
             name: "Lenscap",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
-                .target(name: "LenscapPermission")
+                .target(name: "LenscapPermission"),
+                .target(name: "LenscapUXCore")
             ],
             path: "Sources/Lenscap"
+        ),
+        .target(
+            name: "LenscapUXCore",
+            path: "Sources/LenscapUXCore"
         ),
         .target(
             name: "LenscapPermission",
@@ -26,6 +31,11 @@ let package = Package(
             name: "LenscapPermissionTests",
             dependencies: ["LenscapPermission"],
             path: "Tests/LenscapPermissionTests"
+        ),
+        .testTarget(
+            name: "LenscapUXCoreTests",
+            dependencies: ["LenscapUXCore"],
+            path: "Tests/LenscapUXCoreTests"
         )
     ]
 )

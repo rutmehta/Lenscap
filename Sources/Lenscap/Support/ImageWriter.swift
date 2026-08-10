@@ -64,16 +64,18 @@ enum ImageWriter {
         NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
     }
 
-    static func copyToClipboard(cgImage: CGImage, fileURL: URL?) {
+    @discardableResult
+    static func copyToClipboard(cgImage: CGImage, fileURL: URL?) -> Bool {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        if let data = pngData(cgImage) {
-            pasteboard.setData(data, forType: .png)
+        guard let data = pngData(cgImage), pasteboard.setData(data, forType: .png) else {
+            return false
         }
         if let fileURL {
             pasteboard.addTypes([.fileURL], owner: nil)
-            (fileURL as NSURL).write(to: pasteboard)
+            return pasteboard.writeObjects([fileURL as NSURL])
         }
+        return true
     }
 
     static func downscale(_ cgImage: CGImage, by factor: CGFloat) -> CGImage? {
