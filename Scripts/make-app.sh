@@ -125,7 +125,7 @@ fi
 
 SIGN_OPTS=(--force)
 if [[ "${IDENTITY}" == "Developer ID"* ]]; then
-    SIGN_OPTS+=("--options" "runtime")
+    SIGN_OPTS+=("--options" "runtime" "--timestamp")
 fi
 
 # Sign inner-first, outer-last (no --deep at sign time; --deep traversal of the
@@ -138,6 +138,14 @@ sign() { # $1 = path
 
 if [[ -n "${IDENTITY}" ]]; then
     echo "==> Code signing with: ${IDENTITY}"
+    # Notarization rejects any nested executable without the hardened runtime,
+    # so for Developer ID builds re-sign Sparkle's inner XPCs/Updater.app first
+    # (inner-most → outer-most; the framework and app re-seal them afterwards).
+    if [[ "${IDENTITY}" == "Developer ID"* ]]; then
+        while IFS= read -r -d '' nested; do
+            codesign --force --options runtime --timestamp -s "${IDENTITY}" "$nested"
+        done < <(find "$SPARKLE_FW" \( -name "*.xpc" -o -name "*.app" \) -print0)
+    fi
     if ! sign "$SPARKLE_FW" 2>/dev/null; then
         if [[ -n "${EXPLICIT_IDENTITY}" ]]; then
             echo "ERROR: explicit LENSCAP_SIGN_IDENTITY failed to code-sign Sparkle.framework; aborting."
