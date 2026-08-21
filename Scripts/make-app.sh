@@ -49,8 +49,10 @@ swift build -c release
 
 echo "==> Assembling ${APP}…"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Frameworks" "$APP/Contents/Resources"
 cp "$BIN_DIR/${EXECUTABLE_NAME}" "$APP/Contents/MacOS/${EXECUTABLE_NAME}"
+# App icon (regenerate with: swift Scripts/generate-icon.swift).
+cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 # --- Embed Sparkle.framework -------------------------------------------------
 # SwiftPM emits the linked framework into the build dir (as a symlink into its
@@ -80,6 +82,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>${EXECUTABLE_NAME}</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
     <string>${PRODUCT_VERSION}</string>
     <key>CFBundleVersion</key>

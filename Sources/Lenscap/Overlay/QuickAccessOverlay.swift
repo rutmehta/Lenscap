@@ -5,6 +5,11 @@ import UniformTypeIdentifiers
 /// Floating post-capture thumbnail in the bottom-left corner of the main screen
 /// with quick actions (annotate, copy, save/reveal, pin, trash), drag-out support,
 /// and a hover-aware auto-dismiss timer.
+///
+/// Visual design: the screenshot itself is the card — a continuously-rounded
+/// thumbnail with a real drop shadow and a hairline edge. Actions live in a
+/// compact HUD pill overlaid on the card's bottom edge; a small circular close
+/// button appears at the top-left on hover.
 @MainActor
 final class QuickAccessOverlayController: NSObject {
     static let shared = QuickAccessOverlayController()
@@ -13,10 +18,18 @@ final class QuickAccessOverlayController: NSObject {
     private var item: CaptureItem?
     private var tempDragURL: URL?
     private weak var saveRevealButton: NSButton?
+    private weak var actionPill: NSView?
+    private weak var closeControl: NSView?
 
     private var dismissTask: Task<Void, Never>?
     private let lifecycle = QuickAccessLifecycle(now: { Date.timeIntervalSinceReferenceDate })
     private var generation = 0
+
+    // Layout constants.
+    private static let cornerRadius: CGFloat = 10
+    /// Transparent margin around the card so the drop shadow is not clipped.
+    private static let shadowInset: CGFloat = 32
+    private static let pillRestingAlpha: CGFloat = 0.8
 
     private override init() { super.init() }
 
@@ -37,7 +50,7 @@ final class QuickAccessOverlayController: NSObject {
         newPanel.isOpaque = false
         newPanel.backgroundColor = .clear
         newPanel.level = .statusBar
-        newPanel.hasShadow = true
+        newPanel.hasShadow = false // The card draws its own shadow.
         newPanel.hidesOnDeactivate = false
         newPanel.becomesKeyOnlyIfNeeded = true
         newPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -46,16 +59,17 @@ final class QuickAccessOverlayController: NSObject {
         let margin: CGFloat = 16
         let visible = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
             ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let finalOrigin = NSPoint(x: visible.minX + margin, y: visible.minY + margin)
-        let startOrigin = NSPoint(x: finalOrigin.x - size.width * 0.4, y: finalOrigin.y)
+        // Offset by the shadow inset so the visible card edge sits `margin` from the corner.
+        let finalOrigin = NSPoint(x: visible.minX + margin - Self.shadowInset,
+                                  y: visible.minY + margin - Self.shadowInset)
+        let startOrigin = NSPoint(x: finalOrigin.x, y: finalOrigin.y - 12)
 
         newPanel.setFrameOrigin(startOrigin)
         newPanel.alphaValue = 0
         newPanel.orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.28
-            // Quick ease-out with a hint of overshoot for a springy slide-in.
-            context.timingFunction = CAMediaTimingFunction(controlPoints: 0.18, 1.08, 0.25, 1)
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             newPanel.animator().alphaValue = 1
             newPanel.animator().setFrame(NSRect(origin: finalOrigin, size: size), display: true)
         }
@@ -76,50 +90,78 @@ final class QuickAccessOverlayController: NSObject {
     // MARK: - Content
 
     private func buildContent(for item: CaptureItem, generation: Int) -> NSView {
-        let padding: CGFloat = 8
-        let barAreaHeight: CGFloat = 32
+        let inset = Self.shadowInset
+        let pillHeight: CGFloat = 28
+        let pillMargin: CGFloat = 6
+        let buttonSize: CGFloat = 24
+        let buttonSpacing: CGFloat = 2
 
+        let isPlaceholder = !(item.image.size.width > 1 && item.image.size.height > 1)
         let thumbSize = Self.fittedThumbnailSize(for: item.image)
-        let width = max(thumbSize.width, 176) + padding * 2
-        let height = thumbSize.height + padding * 2 + 1 + barAreaHeight
 
-        let container = QuickAccessHoverView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        container.onHoverChange = { [weak self] inside in
+        // Pill actions (Close lives separately at the card's top-left).
+        var actions: [(symbol: String, tooltip: String, action: Selector)] = []
+        if item.kind == .screenshot {
+            actions.append(("pencil.tip.crop.circle", "Annotate", #selector(annotateAction(_:))))
+        }
+        actions.append(("doc.on.doc", "Copy", #selector(copyAction(_:))))
+        actions.append((item.fileURL != nil ? "folder" : "square.and.arrow.down",
+                        item.fileURL != nil ? "Reveal in Finder" : "Save",
+                        #selector(saveRevealAction(_:))))
+        if item.kind == .screenshot {
+            actions.append(("pin", "Pin to screen", #selector(pinAction(_:))))
+        }
+        actions.append(("trash", "Move to Trash", #selector(trashAction(_:))))
+
+        let pillWidth = CGFloat(actions.count) * buttonSize
+            + CGFloat(actions.count - 1) * buttonSpacing + 12
+
+        let cardWidth = max(thumbSize.width, pillWidth + pillMargin * 2)
+        let cardHeight = max(thumbSize.height, pillHeight + pillMargin * 2 + 24)
+        let cardRect = NSRect(x: inset, y: inset, width: cardWidth, height: cardHeight)
+
+        let container = QuickAccessPassThroughView(
+            frame: NSRect(x: 0, y: 0, width: cardWidth + inset * 2, height: cardHeight + inset * 2))
+        container.interactiveRect = cardRect
+
+        // Card: hover tracking + drop shadow. Content is clipped by the surface below.
+        let card = QuickAccessHoverView(frame: cardRect)
+        card.onHoverChange = { [weak self] inside in
             self?.handleHover(inside, generation: generation)
         }
+        card.wantsLayer = true
+        card.layer?.masksToBounds = false
+        card.layer?.shadowColor = NSColor.black.cgColor
+        card.layer?.shadowOpacity = 0.35
+        card.layer?.shadowRadius = 18
+        card.layer?.shadowOffset = CGSize(width: 0, height: -4)
+        card.layer?.shadowPath = CGPath(roundedRect: card.bounds,
+                                        cornerWidth: Self.cornerRadius,
+                                        cornerHeight: Self.cornerRadius,
+                                        transform: nil)
+        container.addSubview(card)
 
-        let effect = NSVisualEffectView(frame: container.bounds)
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 14
-        effect.layer?.masksToBounds = true
-        effect.layer?.borderWidth = 1
-        effect.layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
-        effect.autoresizingMask = [.width, .height]
-        container.addSubview(effect)
+        // Surface: rounded clipping bounds, semantic background, hairline edge.
+        let surface = QuickAccessCardSurface(frame: card.bounds)
+        surface.wantsLayer = true
+        surface.layer?.cornerRadius = Self.cornerRadius
+        surface.layer?.cornerCurve = .continuous
+        surface.layer?.masksToBounds = true
+        surface.layer?.borderWidth = 0.5
+        card.addSubview(surface)
 
-        // Thumbnail (drag source, double-click to open/annotate).
-        let thumb = QuickAccessThumbnailView(frame: NSRect(x: (width - thumbSize.width) / 2,
-                                                           y: barAreaHeight + 1 + padding,
-                                                           width: thumbSize.width,
-                                                           height: thumbSize.height))
-        if item.image.size.width > 1, item.image.size.height > 1 {
-            thumb.image = item.image
-            thumb.imageScaling = .scaleProportionallyUpOrDown
-        } else {
+        // Thumbnail (drag source, double-click to open/annotate) fills the surface.
+        let thumb = QuickAccessThumbnailView(frame: surface.bounds)
+        thumb.autoresizingMask = [.width, .height]
+        if isPlaceholder {
             thumb.image = NSImage(systemSymbolName: "film", accessibilityDescription: "Recording")?
                 .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 32, weight: .regular))
             thumb.imageScaling = .scaleNone
             thumb.contentTintColor = .secondaryLabelColor
+        } else {
+            thumb.image = item.image
+            thumb.imageScaling = .scaleProportionallyUpOrDown
         }
-        thumb.wantsLayer = true
-        thumb.layer?.cornerRadius = 6
-        thumb.layer?.masksToBounds = true
-        thumb.layer?.borderWidth = 1
-        thumb.layer?.borderColor = NSColor.white.withAlphaComponent(0.2).cgColor
-        thumb.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.25).cgColor
         thumb.toolTip = "Drag to another app — double-click to open"
         thumb.fileURLProvider = { [weak self] in self?.dragFileURL(for: generation) }
         thumb.onDragBegan = { [weak self] in self?.handleDragBegan(generation: generation) }
@@ -127,60 +169,70 @@ final class QuickAccessOverlayController: NSObject {
             self?.handleDragEnded(succeeded: succeeded, generation: generation)
         }
         thumb.onDoubleClick = { [weak self] in self?.handleDoubleClick(generation: generation) }
-        effect.addSubview(thumb)
+        surface.addSubview(thumb)
 
-        // Hairline separator between thumbnail and action bar.
-        let separator = NSView(frame: NSRect(x: 0, y: barAreaHeight, width: width, height: 1))
-        separator.wantsLayer = true
-        separator.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
-        separator.autoresizingMask = [.width]
-        effect.addSubview(separator)
+        // Action pill overlaid on the card's bottom edge.
+        let pill = NSVisualEffectView(frame: NSRect(x: (cardWidth - pillWidth) / 2,
+                                                    y: pillMargin,
+                                                    width: pillWidth,
+                                                    height: pillHeight))
+        pill.material = .hudWindow
+        pill.blendingMode = .withinWindow
+        pill.state = .active
+        pill.wantsLayer = true
+        pill.layer?.cornerRadius = pillHeight / 2
+        pill.layer?.cornerCurve = .continuous
+        pill.layer?.masksToBounds = true
+        pill.alphaValue = Self.pillRestingAlpha
 
-        // Action bar.
-        let bar = NSStackView(frame: NSRect(x: 6, y: (barAreaHeight - 26) / 2, width: width - 12, height: 26))
-        bar.orientation = .horizontal
-        bar.spacing = 2
-        bar.autoresizingMask = [.width]
-
-        if item.kind == .screenshot {
-            bar.addView(makeButton(symbol: "pencil.tip.crop.circle", tooltip: "Annotate",
-                                   action: #selector(annotateAction(_:)), generation: generation), in: .leading)
+        var x: CGFloat = 6
+        for entry in actions {
+            let button = makeButton(symbol: entry.symbol, tooltip: entry.tooltip,
+                                    action: entry.action, generation: generation,
+                                    pointSize: 13)
+            button.frame = NSRect(x: x, y: (pillHeight - buttonSize) / 2,
+                                  width: buttonSize, height: buttonSize)
+            if entry.action == #selector(saveRevealAction(_:)) {
+                saveRevealButton = button
+            }
+            pill.addSubview(button)
+            x += buttonSize + buttonSpacing
         }
-        bar.addView(makeButton(symbol: "doc.on.doc", tooltip: "Copy",
-                               action: #selector(copyAction(_:)), generation: generation), in: .leading)
-        let saveReveal = makeButton(symbol: item.fileURL != nil ? "folder" : "square.and.arrow.down",
-                                    tooltip: item.fileURL != nil ? "Reveal in Finder" : "Save",
-                                    action: #selector(saveRevealAction(_:)), generation: generation)
-        saveRevealButton = saveReveal
-        bar.addView(saveReveal, in: .leading)
-        if item.kind == .screenshot {
-            bar.addView(makeButton(symbol: "pin", tooltip: "Pin to screen",
-                                   action: #selector(pinAction(_:)), generation: generation), in: .leading)
-        }
-        bar.addView(makeButton(symbol: "trash", tooltip: "Move to Trash",
-                               action: #selector(trashAction(_:)), generation: generation), in: .leading)
-        bar.addView(makeButton(symbol: "xmark", tooltip: "Close",
-                               action: #selector(closeAction(_:)), generation: generation, quiet: true), in: .trailing)
-        effect.addSubview(bar)
+        surface.addSubview(pill)
+        actionPill = pill
+
+        // Circular close at the top-left, revealed on hover.
+        let closeSize: CGFloat = 20
+        let close = NSVisualEffectView(frame: NSRect(x: 6,
+                                                     y: cardHeight - closeSize - 6,
+                                                     width: closeSize, height: closeSize))
+        close.material = .hudWindow
+        close.blendingMode = .withinWindow
+        close.state = .active
+        close.wantsLayer = true
+        close.layer?.cornerRadius = closeSize / 2
+        close.layer?.masksToBounds = true
+        close.alphaValue = 0
+        let closeButton = makeButton(symbol: "xmark", tooltip: "Close",
+                                     action: #selector(closeAction(_:)), generation: generation,
+                                     pointSize: 9)
+        closeButton.frame = close.bounds
+        close.addSubview(closeButton)
+        surface.addSubview(close)
+        closeControl = close
 
         return container
     }
 
     private func makeButton(symbol: String, tooltip: String, action: Selector,
-                            generation: Int, quiet: Bool = false) -> NSButton {
-        let pointSize: CGFloat = quiet ? 11 : 13
+                            generation: Int, pointSize: CGFloat) -> NSButton {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
             .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: pointSize, weight: .medium)) ?? NSImage()
         let button = QuickAccessBarButton(image: image, target: self, action: action)
         button.tag = generation
         button.isBordered = false
         button.toolTip = tooltip
-        button.contentTintColor = quiet ? .tertiaryLabelColor : .labelColor
-        button.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 26),
-            button.heightAnchor.constraint(equalToConstant: 26),
-        ])
+        button.contentTintColor = .labelColor
         return button
     }
 
@@ -330,6 +382,7 @@ final class QuickAccessOverlayController: NSObject {
 
     private func handleHover(_ inside: Bool, generation: Int) {
         guard generation == self.generation, panel != nil else { return }
+        setHoverAppearance(inside)
         if inside {
             dismissTask?.cancel()
             dismissTask = nil
@@ -337,6 +390,16 @@ final class QuickAccessOverlayController: NSObject {
         guard let remaining = lifecycle.hoverChanged(for: generation, inside: inside) else { return }
         if !inside {
             startDismissTimer(after: remaining, generation: generation)
+        }
+    }
+
+    /// Sharpens the action pill and reveals the close control while hovered.
+    private func setHoverAppearance(_ inside: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.15
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            actionPill?.animator().alphaValue = inside ? 1 : Self.pillRestingAlpha
+            closeControl?.animator().alphaValue = inside ? 1 : 0
         }
     }
 
@@ -370,22 +433,33 @@ final class QuickAccessOverlayController: NSObject {
         panel = nil
         item = nil
         removeTempDragFile()
+        let target = dismissing.frame.offsetBy(dx: 0, dy: -10)
         NSAnimationContext.runAnimationGroup({ context in
-            context.duration = 0.25
+            context.duration = 0.22
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             dismissing.animator().alphaValue = 0
+            dismissing.animator().setFrame(target, display: true)
         }, completionHandler: {
             dismissing.orderOut(nil)
         })
     }
 
-    /// Removes the current panel immediately (used when a new capture replaces it).
+    /// Removes the current panel with a quick fade (used when a new capture
+    /// replaces it, so the change reads as a swap rather than a flash).
     private func teardown() {
         dismissTask?.cancel()
         dismissTask = nil
         if lifecycle.currentCaptureID == generation {
             _ = lifecycle.dismiss(for: generation)
         }
-        panel?.orderOut(nil)
+        if let outgoing = panel {
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.12
+                outgoing.animator().alphaValue = 0
+            }, completionHandler: {
+                outgoing.orderOut(nil)
+            })
+        }
         panel = nil
         item = nil
         removeTempDragFile()
@@ -394,6 +468,29 @@ final class QuickAccessOverlayController: NSObject {
 }
 
 // MARK: - Supporting views
+
+/// Transparent container that only accepts clicks within the card rect,
+/// so the shadow margin does not swallow desktop clicks.
+final class QuickAccessPassThroughView: NSView {
+    var interactiveRect: NSRect = .zero
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = convert(point, from: superview)
+        guard interactiveRect.contains(local) else { return nil }
+        return super.hitTest(point)
+    }
+}
+
+/// Rounded card surface with a semantic background and hairline edge that
+/// track appearance changes.
+final class QuickAccessCardSurface: NSView {
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
+}
 
 /// Thumbnail that acts as a file drag source and reports double-clicks.
 final class QuickAccessThumbnailView: NSImageView, NSDraggingSource {
@@ -476,7 +573,7 @@ final class QuickAccessBarButton: NSButton {
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         wantsLayer = true
-        layer?.cornerRadius = 6
+        layer?.cornerRadius = min(bounds.height / 2, 12)
     }
 
     override func updateTrackingAreas() {
@@ -498,13 +595,17 @@ final class QuickAccessBarButton: NSButton {
     }
 
     private func setHoverHighlight(_ inside: Bool) {
+        var resolved = NSColor.clear.cgColor
+        if inside {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                resolved = NSColor.labelColor.withAlphaComponent(0.12).cgColor
+            }
+        }
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             context.allowsImplicitAnimation = true
-            layer?.backgroundColor = inside
-                ? NSColor.white.withAlphaComponent(0.16).cgColor
-                : NSColor.clear.cgColor
+            layer?.backgroundColor = resolved
         }
     }
 }
