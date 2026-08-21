@@ -7,6 +7,7 @@ struct ScreenshotsSettingsView: View {
     @AppStorage(SettingsStore.Keys.filenamePrefix) private var filenamePrefix = "Lenscap"
     @AppStorage(SettingsStore.Keys.downscaleRetina) private var downscaleRetina = false
     @AppStorage(SettingsStore.Keys.showCursorInScreenshots) private var showCursorInScreenshots = false
+    @AppStorage(SettingsStore.Keys.showMagnifier) private var showMagnifier = true
 
     var body: some View {
         Form {
@@ -32,6 +33,7 @@ struct ScreenshotsSettingsView: View {
             Section("Options") {
                 Toggle("Downscale Retina screenshots to 1x", isOn: $downscaleRetina)
                 Toggle("Show cursor in screenshots", isOn: $showCursorInScreenshots)
+                Toggle("Show magnifier loupe when selecting an area", isOn: $showMagnifier)
             }
         }
         .formStyle(.grouped)

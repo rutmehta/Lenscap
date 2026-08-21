@@ -25,6 +25,14 @@
 # Shell out nothing unnecessary; fail loudly, not silently.
 set -euo pipefail
 
+# Running under sudo breaks the build twice over: root's keychain has no signing
+# identities (silently forcing an ad-hoc build whose TCC grant dies on the next
+# rebuild), and it litters the checkout with root-owned files.
+if [[ "${EUID}" -eq 0 ]]; then
+    echo "ERROR: do not run this script with sudo — re-run as your normal user." >&2
+    exit 1
+fi
+
 cd "$(dirname "$0")/.."
 
 # --- Centralized branding ---------------------------------------------------

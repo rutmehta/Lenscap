@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 
 
 /// Result of an area selection. `rect` is in global AppKit coordinates (origin bottom-left);
@@ -49,6 +50,39 @@ final class SelectionOverlayController {
             windows.first?.makeKeyAndOrderFront(nil)
         }
         installKeyMonitor()
+        if SettingsStore.shared.showMagnifier {
+            Task { @MainActor in await self.loadLoupeSources() }
+        }
+    }
+
+    /// One-shot per-screen capture (own windows excluded, so pixels are undimmed)
+    /// that backs the magnifier loupe. Skipped silently when Screen Recording
+    /// permission is missing — the overlay works fine without it.
+    private func loadLoupeSources() async {
+        guard let content = try? await CaptureEngine.shareableContent() else { return }
+        let ownApp = content.applications.first { $0.processID == getpid() }
+        for window in windows {
+            guard !finished else { return }
+            guard let display = content.displays.first(where: { $0.displayID == window.assignedScreen.displayID })
+            else { continue }
+            let filter: SCContentFilter
+            if let ownApp {
+                filter = SCContentFilter(display: display, excludingApplications: [ownApp], exceptingWindows: [])
+            } else {
+                filter = SCContentFilter(display: display, excludingWindows: [])
+            }
+            let config = SCStreamConfiguration()
+            let scale = CGFloat(filter.pointPixelScale)
+            config.width = Int(filter.contentRect.width * scale)
+            config.height = Int(filter.contentRect.height * scale)
+            config.showsCursor = false
+            config.captureResolution = .best
+            guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter,
+                                                                          configuration: config),
+                  !finished
+            else { continue }
+            (window.contentView as? SelectionView)?.setLoupeSource(image)
+        }
     }
 
     func finish(with result: SelectionResult?) {
@@ -122,6 +156,12 @@ final class SelectionView: NSView {
     private var currentPoint: NSPoint?
     private var isDragging = false
     private var trackingArea: NSTrackingArea?
+    private var loupeSource: CGImage?
+
+    func setLoupeSource(_ image: CGImage) {
+        loupeSource = image
+        needsDisplay = true
+    }
 
 
     init(frame: NSRect, controller: SelectionOverlayController?, screen: NSScreen, prompt: String?) {
@@ -260,14 +300,63 @@ final class SelectionView: NSView {
             drawCornerTicks(for: rect)
 
             drawSizeLabel(for: rect)
+            if let currentPoint {
+                drawLoupe(at: currentPoint)
+            }
         } else {
             dim.setFill()
             bounds.fill()
             if let currentPoint {
                 drawCrosshair(at: currentPoint)
+                drawLoupe(at: currentPoint)
             }
             drawPrompt()
         }
+    }
+
+    /// Magnifier loupe: an 8x zoomed circle of the pixels around the cursor, drawn
+    /// from the one-shot screen capture taken when the overlay appeared.
+    private func drawLoupe(at point: NSPoint) {
+        guard let source = loupeSource else { return }
+        let diameter: CGFloat = 120
+        let zoom: CGFloat = 8
+
+        var origin = NSPoint(x: point.x + 24, y: point.y + 24)
+        if origin.x + diameter > bounds.maxX - 8 { origin.x = point.x - diameter - 24 }
+        if origin.y + diameter > bounds.maxY - 8 { origin.y = point.y - diameter - 24 }
+        origin.x = max(origin.x, bounds.minX + 8)
+        origin.y = max(origin.y, bounds.minY + 8)
+        let loupeRect = NSRect(x: origin.x, y: origin.y, width: diameter, height: diameter)
+
+        // View point → source pixels (CGImage origin is top-left).
+        let scaleX = CGFloat(source.width) / bounds.width
+        let scaleY = CGFloat(source.height) / bounds.height
+        let cropSide = diameter / zoom
+        let cropPixel = CGRect(x: (point.x - cropSide / 2) * scaleX,
+                               y: (bounds.height - point.y - cropSide / 2) * scaleY,
+                               width: cropSide * scaleX,
+                               height: cropSide * scaleY)
+        guard let crop = source.cropping(to: cropPixel) else { return }
+
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(ovalIn: loupeRect).addClip()
+        NSGraphicsContext.current?.imageInterpolation = .none
+        NSImage(cgImage: crop, size: loupeRect.size)
+            .draw(in: loupeRect, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Dual ring + center pixel indicator, matching the selection border style.
+        NSColor.black.withAlphaComponent(0.4).setStroke()
+        let outerRing = NSBezierPath(ovalIn: loupeRect.insetBy(dx: -1.25, dy: -1.25))
+        outerRing.lineWidth = 2.5
+        outerRing.stroke()
+        NSColor.white.setStroke()
+        let ring = NSBezierPath(ovalIn: loupeRect)
+        ring.lineWidth = 1.5
+        ring.stroke()
+        let pixelBox = NSRect(x: loupeRect.midX - zoom / 2, y: loupeRect.midY - zoom / 2,
+                              width: zoom, height: zoom)
+        NSBezierPath(rect: pixelBox).stroke()
     }
 
     /// Short white ticks at the selection corners so the active rect reads at a glance.

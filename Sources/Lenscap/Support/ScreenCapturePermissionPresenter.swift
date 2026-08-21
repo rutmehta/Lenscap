@@ -138,7 +138,26 @@ final class ScreenCapturePermissionPresenter {
         buttonStack.spacing = 10
         buttonStack.alignment = .centerY
 
-        let content = NSStackView(views: [titleLabel, detailLabel, buttonStack])
+        var rows: [NSView] = [titleLabel, detailLabel]
+
+        // Drag-to-grant: System Settings' permission lists accept a dropped .app
+        // bundle, so offer the app icon as a drag source (bundled builds only).
+        if Bundle.main.bundleURL.pathExtension == "app" {
+            let icon = DraggableAppIconView(appURL: Bundle.main.bundleURL)
+            let hint = NSTextField(wrappingLabelWithString:
+                "Or drag this icon straight into the Screen Recording list in System Settings.")
+            hint.font = .systemFont(ofSize: 12)
+            hint.textColor = .secondaryLabelColor
+            hint.maximumNumberOfLines = 0
+            let dragRow = NSStackView(views: [icon, hint])
+            dragRow.orientation = .horizontal
+            dragRow.spacing = 12
+            dragRow.alignment = .centerY
+            rows.append(dragRow)
+        }
+        rows.append(buttonStack)
+
+        let content = NSStackView(views: rows)
         content.orientation = .vertical
         content.alignment = .leading
         content.spacing = 10
@@ -185,5 +204,35 @@ final class ScreenCapturePermissionPresenter {
                 self?.recheckAfterForeground()
             }
         }
+    }
+}
+
+/// App icon that can be dragged straight into System Settings' permission list —
+/// the list accepts a dropped .app bundle, which adds (or highlights) the app row.
+final class DraggableAppIconView: NSImageView, NSDraggingSource {
+    private let appURL: URL
+
+    init(appURL: URL) {
+        self.appURL = appURL
+        super.init(frame: NSRect(x: 0, y: 0, width: 56, height: 56))
+        let icon = NSWorkspace.shared.icon(forFile: appURL.path)
+        icon.size = NSSize(width: 56, height: 56)
+        image = icon
+        toolTip = "Drag into the Screen Recording list"
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: 56, height: 56) }
+
+    override func mouseDown(with event: NSEvent) {
+        let item = NSDraggingItem(pasteboardWriter: appURL as NSURL)
+        item.setDraggingFrame(bounds, contents: image)
+        beginDraggingSession(with: [item], event: event, source: self)
+    }
+
+    func draggingSession(_ session: NSDraggingSession,
+                         sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
+        context == .outsideApplication ? .copy : []
     }
 }

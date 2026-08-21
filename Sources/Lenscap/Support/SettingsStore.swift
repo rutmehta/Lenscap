@@ -18,6 +18,7 @@ final class SettingsStore {
         static let playSound = "playSound"
         static let captureDelay = "captureDelay" // seconds, 0 = off
         static let showCursorInScreenshots = "showCursorInScreenshots"
+        static let showMagnifier = "showMagnifier"
         static let showCursorInRecordings = "showCursorInRecordings"
         static let downscaleRetina = "downscaleRetina"
         static let videoFPS = "videoFPS"
@@ -40,6 +41,7 @@ final class SettingsStore {
             Keys.playSound: true,
             Keys.captureDelay: 0,
             Keys.showCursorInScreenshots: false,
+            Keys.showMagnifier: true,
             Keys.showCursorInRecordings: true,
             Keys.downscaleRetina: false,
             Keys.videoFPS: 60,
@@ -104,6 +106,11 @@ final class SettingsStore {
     var captureDelay: Int {
         get { defaults.integer(forKey: Keys.captureDelay) }
         set { defaults.set(newValue, forKey: Keys.captureDelay) }
+    }
+
+    var showMagnifier: Bool {
+        get { defaults.bool(forKey: Keys.showMagnifier) }
+        set { defaults.set(newValue, forKey: Keys.showMagnifier) }
     }
 
     var showCursorInScreenshots: Bool {
