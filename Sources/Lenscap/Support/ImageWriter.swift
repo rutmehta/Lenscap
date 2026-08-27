@@ -65,17 +65,20 @@ enum ImageWriter {
     }
 
     @discardableResult
-    static func copyToClipboard(cgImage: CGImage, fileURL: URL?) -> Bool {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard let data = pngData(cgImage), pasteboard.setData(data, forType: .png) else {
+    static func copyToClipboard(cgImage: CGImage, fileURL: URL?,
+                                pasteboard: NSPasteboard = .general) -> Bool {
+        // Keep both representations on one item to avoid duplicate pasted attachments.
+        let item = NSPasteboardItem()
+        guard let data = pngData(cgImage), item.setData(data, forType: .png) else {
             return false
         }
         if let fileURL {
-            pasteboard.addTypes([.fileURL], owner: nil)
-            return pasteboard.writeObjects([fileURL as NSURL])
+            guard item.setString(fileURL.absoluteString, forType: .fileURL) else {
+                return false
+            }
         }
-        return true
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([item])
     }
 
     static func downscale(_ cgImage: CGImage, by factor: CGFloat) -> CGImage? {

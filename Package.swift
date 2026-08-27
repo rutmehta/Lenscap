@@ -28,6 +28,11 @@ let package = Package(
             path: "Sources/LenscapPermission"
         ),
         .testTarget(
+            name: "LenscapTests",
+            dependencies: ["Lenscap"],
+            path: "Tests/LenscapTests"
+        ),
+        .testTarget(
             name: "LenscapPermissionTests",
             dependencies: ["LenscapPermission"],
             path: "Tests/LenscapPermissionTests"

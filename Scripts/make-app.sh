@@ -39,7 +39,6 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source Config/branding.sh
 
-PRODUCT_VERSION="${PRODUCT_VERSION:-1.0.0}"
 APP="dist/${PRODUCT_NAME}.app"
 DMG="dist/${PRODUCT_NAME}-${PRODUCT_VERSION}.dmg"
 BIN_DIR="$(swift build -c release --show-bin-path)"

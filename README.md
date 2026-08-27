@@ -59,20 +59,23 @@ A release is produced by:
 # 1. Set the signing seed (private; never committed) and pick a version.
 export LENSCAP_EDDSA_KEY_FILE="$HOME/.lenscap-dist-keys/sparkle_seed.b64"
 export PRODUCT_VERSION=1.1.0
+export SPARKLE_BIN_DIR="$PWD/.build/artifacts/sparkle/Sparkle/bin"
 # 2. Build the DMG, sign it, update + re-sign appcast.xml.
 Scripts/release-update.sh
-# 3. Manually tag + create the GitHub release and attach the DMG (see the
-#    script's printed next-steps; it does not push or publish on its own).
+# 3. Commit the source, version metadata, and signed appcast; push the version tag.
+# 4. Publish the GitHub release and attach the DMG before pushing main, so the
+#    live feed never advertises a download that is not available yet.
+#    The script does not push or publish on its own.
 ```
 
 Signing keys, the appcast format, and the release flow are documented in
 [`Scripts/release-update.sh`](Scripts/release-update.sh) and
 [`Config/branding.sh`](Config/branding.sh).
 
-> The app is currently **version 1.0.0** with no newer release published, so
-> update checks report "up to date". When you're ready to ship, run the flow
-> above rather than hand-editing `appcast.xml` — it must be re-signed after any
-> change or Sparkle will reject it.
+> **Version 1.0.1** fixes duplicate clipboard items when copying a saved capture.
+> Existing Sparkle-enabled installations can update through the same feed and
+> signing key. Each release must use a higher version number, and the appcast
+> must be re-signed after changes.
 
 ## Requirements
 

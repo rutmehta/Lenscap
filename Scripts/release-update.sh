@@ -35,7 +35,6 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source Config/branding.sh
 
-PRODUCT_VERSION="${PRODUCT_VERSION:-1.0.0}"
 DMG="dist/${PRODUCT_NAME}-${PRODUCT_VERSION}.dmg"
 
 # --- Locate dependencies ----------------------------------------------------
@@ -72,7 +71,7 @@ NEW_ITEM="    <item>
       <sparkle:version>${PRODUCT_VERSION}</sparkle:version>
       <sparkle:shortVersionString>${PRODUCT_VERSION}</sparkle:shortVersionString>
       <description>${PRODUCT_NAME} ${PRODUCT_VERSION}</description>
-      <enclosure url=\"${GITHUB_REPO_URL}/releases/download/v${PRODUCT_VERSION}/${PRODUCT_NAME}-${PRODUCT_VERSION}.dmg\" sparkle:edSignature=\"${DMG_SIG}\" sparkle:length=\"${DMG_SIZE}\" type=\"application/octet-stream\"/>
+      <enclosure url=\"${GITHUB_REPO_URL}/releases/download/v${PRODUCT_VERSION}/${PRODUCT_NAME}-${PRODUCT_VERSION}.dmg\" sparkle:edSignature=\"${DMG_SIG}\" length=\"${DMG_SIZE}\" type=\"application/octet-stream\"/>
     </item>"
 
 # Insert new item right after the channel opening tag, stripping the old
@@ -103,9 +102,11 @@ echo
 echo "==> appcast.xml updated and re-signed."
 echo
 echo "To ship this release (manual, not automated):"
-echo "  1. Commit the DMG + updated appcast + this source change."
+echo "  1. Commit the source, version metadata, and signed appcast (not the DMG)."
 echo "  2. git tag v${PRODUCT_VERSION} && git push origin v${PRODUCT_VERSION}"
-echo "  3. Create a GitHub release for v${PRODUCT_VERSION} and attach:"
+echo "  3. Publish a GitHub release for v${PRODUCT_VERSION} and attach:"
 echo "       ${DMG}"
 echo "     replacing the placeholder enclosure URL in appcast.xml if your"
 echo "     release asset name differs, then re-run sign_update on appcast.xml."
+echo "  4. Verify the release asset URL is public, then push the commit to main"
+echo "     to publish the appcast. Upload the DMG before updating the live feed."
