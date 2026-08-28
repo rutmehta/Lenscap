@@ -11,6 +11,7 @@ final class SettingsWindowController {
             window = makeWindow()
         }
         NSApp.activate(ignoringOtherApps: true)
+        window?.deminiaturize(nil)
         window?.makeKeyAndOrderFront(nil)
     }
 

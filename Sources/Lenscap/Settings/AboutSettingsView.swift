@@ -10,7 +10,7 @@ struct AboutSettingsView: View {
                 .padding(.bottom, 12)
             Text("Lenscap")
                 .font(.system(.title, design: .rounded).bold())
-            Text("Version 1.0.0")
+            Text("Version \(AppVersion.displayString())")
                 .font(.callout)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
@@ -24,6 +24,10 @@ struct AboutSettingsView: View {
                  destination: URL(string: "https://github.com/rutmehta/Lenscap")!)
                 .font(.callout)
                 .padding(.top, 8)
+            Button("Check for Updates…") {
+                UpdaterController.shared.checkForUpdates(nil)
+            }
+            .padding(.top, 4)
             VStack(spacing: 2) {
                 Text("Released under the MIT License.")
                 Text("Not affiliated with MakeTheWeb / CleanShot.")

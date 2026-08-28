@@ -51,7 +51,7 @@ Being honest about the rough edges before you send this to a subreddit:
 
 ## Auto-updates
 
-Lenscap uses **[Sparkle](https://sparkle-project.org)** for updates. On first launch it asks whether you'd like to be checked for updates automatically; you can also trigger a check any time from the menu bar via **Check for Updates…** (⌘U). The feed lives at [appcast.xml](appcast.xml) and is served from this GitHub repo (no CDN, no third-party tracking).
+Lenscap uses **[Sparkle](https://sparkle-project.org)** for updates. On first launch it asks whether you'd like to be checked for updates automatically. To open Settings while Lenscap is running, reopen **Lenscap** from Applications or Spotlight—even if its menu-bar icon is hidden. Choose **About → Check for Updates…** to check manually. You can also right-click the Lenscap menu-bar icon and choose **Check for Updates…**. The feed lives at [appcast.xml](appcast.xml) and is served from this GitHub repo (no CDN, no third-party tracking).
 
 A release is produced by:
 
@@ -72,7 +72,9 @@ Signing keys, the appcast format, and the release flow are documented in
 [`Scripts/release-update.sh`](Scripts/release-update.sh) and
 [`Config/branding.sh`](Config/branding.sh).
 
-> **Version 1.0.1** fixes duplicate clipboard items when copying a saved capture.
+> **Version 1.0.2** makes Settings accessible by reopening Lenscap and adds
+> **Check for Updates…** to its About tab. It includes the 1.0.1 fix for duplicate
+> clipboard items when copying a saved capture.
 > Existing Sparkle-enabled installations can update through the same feed and
 > signing key. Each release must use a higher version number, and the appcast
 > must be re-signed after changes.

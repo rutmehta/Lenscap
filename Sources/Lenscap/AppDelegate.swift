@@ -19,6 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // system dialog can actually be acted on.
     }
 
+    /// Lenscap is an accessory app, so it has no Dock icon or app menu to
+    /// recover from a hidden menu-bar item. Reopening it brings the retained
+    /// Settings window forward as a reliable entry point.
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows flag: Bool) -> Bool {
+        AppCoordinator.shared.openSettings()
+        return true
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard ScreenRecorder.shared.isRecording else { return .terminateNow }
         // Finish the in-flight recording (stop the stream, finalize the file,

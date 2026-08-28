@@ -19,6 +19,14 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     <item>
+      <title>Version 1.0.2</title>
+      <pubDate>Fri, 28 Aug 2026 00:17:03 +0000</pubDate>
+      <sparkle:version>1.0.2</sparkle:version>
+      <sparkle:shortVersionString>1.0.2</sparkle:shortVersionString>
+      <description>Reopening Lenscap brings Settings forward. Check for Updates is now available in Settings &gt; About, which also shows the installed version. Includes the duplicate clipboard fix from 1.0.1.</description>
+      <enclosure url="https://github.com/rutmehta/Lenscap/releases/download/v1.0.2/Lenscap-1.0.2.dmg" sparkle:edSignature="0bAv3mtOeU7NKXnhBi6qHwHW9xdcngo1LzLcHX1Ulg49JVXLF8EY/3eHozCIKBo32DLOg0zqymtmOazwifyPCA==" length="2741369" type="application/octet-stream"></enclosure>
+    </item>
+    <item>
       <title>Version 1.0.1</title>
       <pubDate>Thu, 27 Aug 2026 17:31:19 +0000</pubDate>
       <sparkle:version>1.0.1</sparkle:version>
@@ -36,6 +44,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: 3HifA11tBV5OjikWbVq1m7MhmY95d/HwRt2qJ3Ez2mgWNdkyd8NZJ6J5v30pAvCuc243gcEXQ1MfQ/Xo/HnCCg==
-length: 2354
+edSignature: rp8cgrh7NcUAM0lifIGRsBWcIu9Oot0TA0jzk8MTAL5uoDRLHgQkqCY2bJTOPSsib5nTv+hS54T6gaMsfXrlDA==
+length: 3084
 -->
