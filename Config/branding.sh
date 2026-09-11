@@ -17,7 +17,7 @@ export PRODUCT_NAME="${PRODUCT_NAME:-Lenscap}"            # display name: menu b
 export EXECUTABLE_NAME="${EXECUTABLE_NAME:-Lenscap}"      # binary name / CFBundleExecutable
 export BUNDLE_IDENTIFIER="${BUNDLE_IDENTIFIER:-com.rutmehta.lenscap}"
 export DMG_VOLUME_NAME="${DMG_VOLUME_NAME:-Lenscap}"      # DMG volume base name (version appended)
-export PRODUCT_VERSION="${PRODUCT_VERSION:-1.0.2}"        # CFBundleShortVersionString / CFBundleVersion
+export PRODUCT_VERSION="${PRODUCT_VERSION:-1.1.2}"        # CFBundleShortVersionString / CFBundleVersion
 
 # --- Distribution / update endpoints ---------------------------------------
 export GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/rutmehta/Lenscap}"

@@ -14,6 +14,7 @@ final class AppCoordinator {
     private init() {}
 
     func start() {
+        CloudController.shared.start()
         statusBar = StatusBarController()
         HotkeyManager.shared.registerAll()
     }
@@ -28,8 +29,13 @@ final class AppCoordinator {
     /// This centralizes the gate instead of patching eight call sites, and it
     /// always re-reads `CGPreflight` (a fresh controller each call) so the old
     /// one-shot-flag trap cannot recur.
-    private func beginScreenCapture(retry: @escaping @MainActor () -> Void) -> Bool {
-        let controller = ScreenCapturePermissionController(provider: LiveScreenCapturePermissionProvider())
+    func beginScreenCapture(permissionProvider: ScreenCapturePermissionProviding = LiveScreenCapturePermissionProvider(),
+                            retry: @escaping @MainActor () -> Void) -> Bool {
+        // Selection overlays activate the app to receive keyboard events.
+        // Keep that activation from resurfacing a retained Settings window.
+        SettingsWindowController.hideForCapture()
+        CapturePanelWindowController.hideForCapture()
+        let controller = ScreenCapturePermissionController(provider: permissionProvider)
         guard controller.canCapture else {
             ScreenCapturePermissionPresenter.shared.present(pending: {
                 Task { @MainActor in retry() }
@@ -158,6 +164,10 @@ final class AppCoordinator {
         SettingsWindowController.open()
     }
 
+    func openCloudLibrary() {
+        CloudLibraryWindowController.open()
+    }
+
     func openEditor(image: NSImage, sourceURL: URL?) {
         AnnotationEditorController.open(image: image, sourceURL: sourceURL)
     }
@@ -178,6 +188,8 @@ final class AppCoordinator {
                 history.add(url: url, kind: kind)
             }
         }
+        CloudCaptureBridge.shared.screenshot(cgImage, savedURL: item.fileURL, scale: scale,
+                                             id: item.id, createdAt: item.date)
         if settings.copyToClipboard {
             ImageWriter.copyToClipboard(cgImage: cgImage, fileURL: item.fileURL)
         }
@@ -195,6 +207,7 @@ final class AppCoordinator {
         history.add(url: url, kind: kind)
         playCaptureSoundIfEnabled()
         let item = CaptureItem(kind: kind, image: thumbnail ?? NSImage(), fileURL: url)
+        CloudCaptureBridge.shared.finalizedFile(url, kind: kind, id: item.id, createdAt: item.date)
         if settings.showQuickAccess {
             QuickAccessOverlayController.shared.show(item)
         } else {

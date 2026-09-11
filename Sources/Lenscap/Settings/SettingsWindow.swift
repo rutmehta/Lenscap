@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Tabbed macOS settings window. A single instance is reused; `open()` re-fronts it.
+/// A single, resizable Settings window. Reopening preserves the selected category.
 @MainActor
 final class SettingsWindowController {
     private static var window: NSWindow?
@@ -15,47 +15,123 @@ final class SettingsWindowController {
         window?.makeKeyAndOrderFront(nil)
     }
 
+    /// A capture may activate Lenscap, but must not raise its last Settings
+    /// window over the screen being captured. Reopening remains explicit.
+    static func hideForCapture() {
+        window?.orderOut(nil)
+    }
+
     // MARK: - Window construction
 
     private static func makeWindow() -> NSWindow {
-        let tabs = SettingsTabViewController()
-        tabs.tabStyle = .toolbar
-        tabs.addTabViewItem(tab("General", symbol: "gearshape", height: 470, view: GeneralSettingsView()))
-        tabs.addTabViewItem(tab("Screenshots", symbol: "camera.viewfinder", height: 330, view: ScreenshotsSettingsView()))
-        tabs.addTabViewItem(tab("Recording", symbol: "record.circle", height: 320, view: RecordingSettingsView()))
-        tabs.addTabViewItem(tab("Shortcuts", symbol: "command", height: 480, view: ShortcutsSettingsView()))
-        tabs.addTabViewItem(tab("About", symbol: "info.circle", height: 340, view: AboutSettingsView()))
-
-        let window = NSWindow(contentViewController: tabs)
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.title = "General"
+        let size = NSSize(width: 820, height: 640)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentViewController = NSHostingController(rootView: SettingsRootView())
+        window.setContentSize(size)
+        window.contentMinSize = NSSize(width: 760, height: 580)
+        window.title = "Lenscap Settings"
+        window.identifier = NSUserInterfaceItemIdentifier("LenscapSettings")
         window.isReleasedWhenClosed = false
         window.center()
         return window
     }
+}
 
-    private static func tab(_ label: String, symbol: String, height: CGFloat, view: some View) -> NSTabViewItem {
-        let host = NSHostingController(rootView: view.frame(width: 560, height: height))
-        let item = NSTabViewItem(viewController: host)
-        item.label = label
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        return item
+private enum SettingsPage: String, CaseIterable, Identifiable {
+    case general = "General"
+    case screenshots = "Screenshots"
+    case recording = "Recording"
+    case cloud = "Cloud"
+    case shortcuts = "Shortcuts"
+    case about = "About"
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .general: return "gearshape"
+        case .screenshots: return "camera"
+        case .recording: return "record.circle"
+        case .cloud: return "icloud"
+        case .shortcuts: return "keyboard"
+        case .about: return "info.circle"
+        }
+    }
+
+    @ViewBuilder var content: some View {
+        switch self {
+        case .general: GeneralSettingsView()
+        case .screenshots: ScreenshotsSettingsView()
+        case .recording: RecordingSettingsView()
+        case .cloud: CloudSettingsView()
+        case .shortcuts: ShortcutsSettingsView()
+        case .about: AboutSettingsView()
+        }
     }
 }
 
-/// Keeps the window title in sync with the selected toolbar tab.
-private final class SettingsTabViewController: NSTabViewController {
-    override func viewWillAppear() {
-        super.viewWillAppear()
-        if tabViewItems.indices.contains(selectedTabViewItemIndex) {
-            view.window?.title = tabViewItems[selectedTabViewItemIndex].label
+private struct SettingsRootView: View {
+    @State private var selection: SettingsPage? = .general
+
+    var body: some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Lenscap")
+                    .font(.headline)
+                    .padding(.horizontal, 18)
+                    .padding(.top, 22)
+                    .padding(.bottom, 12)
+                List(SettingsPage.allCases, selection: $selection) { page in
+                    Label(page.rawValue, systemImage: page.symbol)
+                        .padding(.vertical, 5)
+                        .tag(page)
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                Text("Version \(AppVersion.displayString())")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(18)
+            }
+            .frame(width: 180)
+            .background(SettingsSidebarBackground())
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text((selection ?? .general).rawValue)
+                    .font(.title2.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .padding(.bottom, 16)
+
+                (selection ?? .general).content
+                    .id(selection)
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+        .frame(minWidth: 760, minHeight: 580)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+}
+
+private struct SettingsSidebarBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .withinWindow
+        view.state = .followsWindowActiveState
+        return view
     }
 
-    override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
-        super.tabView(tabView, didSelect: tabViewItem)
-        if let tabViewItem {
-            view.window?.title = tabViewItem.label
-        }
-    }
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
 }

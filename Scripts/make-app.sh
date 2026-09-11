@@ -142,12 +142,13 @@ sign() { # $1 = path
 if [[ -n "${IDENTITY}" ]]; then
     echo "==> Code signing with: ${IDENTITY}"
     # Notarization rejects any nested executable without the hardened runtime,
-    # so for Developer ID builds re-sign Sparkle's inner XPCs/Updater.app first
+    # so for Developer ID builds re-sign Sparkle's inner XPCs/Updater.app and the
+    # standalone Autoupdate helper binary first
     # (inner-most → outer-most; the framework and app re-seal them afterwards).
     if [[ "${IDENTITY}" == "Developer ID"* ]]; then
         while IFS= read -r -d '' nested; do
             codesign --force --options runtime --timestamp -s "${IDENTITY}" "$nested"
-        done < <(find "$SPARKLE_FW" \( -name "*.xpc" -o -name "*.app" \) -print0)
+        done < <(find "$SPARKLE_FW" \( -name "*.xpc" -o -name "*.app" -o \( -type f -name "Autoupdate" \) \) -print0)
     fi
     if ! sign "$SPARKLE_FW" 2>/dev/null; then
         if [[ -n "${EXPLICIT_IDENTITY}" ]]; then

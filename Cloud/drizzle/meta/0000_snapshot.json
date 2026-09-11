@@ -1,0 +1,252 @@
+{
+  "id": "b738d29e-8312-4e34-bb99-33b23e7f8675",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.lenscap_captures": {
+      "name": "lenscap_captures",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "filename": {
+          "name": "filename",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "lenscap_capture_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "content_type": {
+          "name": "content_type",
+          "type": "lenscap_capture_content_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "byte_count": {
+          "name": "byte_count",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sha256": {
+          "name": "sha256",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uploaded_at": {
+          "name": "uploaded_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "lenscap_capture_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "upload_expires_at": {
+          "name": "upload_expires_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "lenscap_captures_library_idx": {
+          "name": "lenscap_captures_library_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "lenscap_captures_object_key_unique": {
+          "name": "lenscap_captures_object_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "object_key"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "lenscap_capture_bytes": {
+          "name": "lenscap_capture_bytes",
+          "value": "\"lenscap_captures\".\"byte_count\" > 0 AND \"lenscap_captures\".\"byte_count\" <= 5368709120"
+        },
+        "lenscap_capture_hash": {
+          "name": "lenscap_capture_hash",
+          "value": "\"lenscap_captures\".\"sha256\" ~ '^[a-f0-9]{64}$'"
+        },
+        "lenscap_capture_filename": {
+          "name": "lenscap_capture_filename",
+          "value": "octet_length(\"lenscap_captures\".\"filename\") BETWEEN 1 AND 255"
+        },
+        "lenscap_capture_published": {
+          "name": "lenscap_capture_published",
+          "value": "(\"lenscap_captures\".\"status\" = 'pending' AND \"lenscap_captures\".\"uploaded_at\" IS NULL) OR (\"lenscap_captures\".\"status\" = 'uploaded' AND \"lenscap_captures\".\"uploaded_at\" IS NOT NULL)"
+        },
+        "lenscap_capture_media": {
+          "name": "lenscap_capture_media",
+          "value": "(\"lenscap_captures\".\"kind\" = 'screenshot' AND \"lenscap_captures\".\"content_type\" IN ('image/png', 'image/jpeg')) OR (\"lenscap_captures\".\"kind\" = 'video' AND \"lenscap_captures\".\"content_type\" = 'video/mp4') OR (\"lenscap_captures\".\"kind\" = 'gif' AND \"lenscap_captures\".\"content_type\" = 'image/gif')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.lenscap_deleted_captures": {
+      "name": "lenscap_deleted_captures",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "object_key": {
+          "name": "object_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "cleanup_after": {
+          "name": "cleanup_after",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_cleanup_at": {
+          "name": "last_cleanup_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "lenscap_deleted_cleanup_idx": {
+          "name": "lenscap_deleted_cleanup_idx",
+          "columns": [
+            {
+              "expression": "cleanup_after",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_cleanup_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.lenscap_capture_content_type": {
+      "name": "lenscap_capture_content_type",
+      "schema": "public",
+      "values": [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "video/mp4"
+      ]
+    },
+    "public.lenscap_capture_kind": {
+      "name": "lenscap_capture_kind",
+      "schema": "public",
+      "values": [
+        "screenshot",
+        "video",
+        "gif"
+      ]
+    },
+    "public.lenscap_capture_status": {
+      "name": "lenscap_capture_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "uploaded"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

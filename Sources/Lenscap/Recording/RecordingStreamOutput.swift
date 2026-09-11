@@ -44,16 +44,22 @@ final class RecordingStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
 
     // MARK: - Init
 
-    init(videoTo url: URL, size: CGSize, includeAudio: Bool) throws {
+    init(videoTo url: URL, size: CGSize, includeAudio: Bool, framesPerSecond: Int = 60) throws {
         isVideo = true
         gifMaxDuration = 0
         videoURL = url
 
         let assetWriter = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        assetWriter.shouldOptimizeForNetworkUse = true
+        let outputSize = Self.videoSize(for: size)
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: Int(size.width),
-            AVVideoHeightKey: Int(size.height),
+            AVVideoWidthKey: Int(outputSize.width),
+            AVVideoHeightKey: Int(outputSize.height),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
+                AVVideoExpectedSourceFrameRateKey: min(60, max(1, framesPerSecond)),
+            ],
         ]
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         video.expectsMediaDataInRealTime = true
@@ -81,6 +87,18 @@ final class RecordingStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         super.init()
     }
 
+    /// Bounds H.264 output to a browser-friendly 3840-by-2160 envelope while
+    /// preserving aspect ratio, retaining source-sized captures when smaller,
+    /// and producing codec-friendly even dimensions.
+    static func videoSize(for sourceSize: CGSize) -> CGSize {
+        let width = max(2, sourceSize.width)
+        let height = max(2, sourceSize.height)
+        let longEdge = max(width, height)
+        let shortEdge = min(width, height)
+        let scale = min(1, 3840 / longEdge, 2160 / shortEdge)
+        return CGSize(width: evenFloor(width * scale), height: evenFloor(height * scale))
+    }
+
     init(gifMaxDuration: Double) {
         isVideo = false
         self.gifMaxDuration = gifMaxDuration
@@ -103,7 +121,7 @@ final class RecordingStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         }
     }
 
-    private func handleScreenSample(_ sampleBuffer: CMSampleBuffer) {
+    func handleScreenSample(_ sampleBuffer: CMSampleBuffer) {
         // Only complete frames carry usable image data; idle/blank frames are skipped.
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer,
                                                                         createIfNecessary: false)
@@ -191,5 +209,9 @@ final class RecordingStreamOutput: NSObject, SCStreamOutput, SCStreamDelegate {
         if let videoURL {
             try? FileManager.default.removeItem(at: videoURL)
         }
+    }
+
+    private static func evenFloor(_ value: CGFloat) -> CGFloat {
+        CGFloat(max(2, Int(value.rounded(.down)) & ~1))
     }
 }

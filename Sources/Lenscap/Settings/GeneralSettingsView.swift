@@ -1,71 +1,80 @@
 import AppKit
 import SwiftUI
 
-/// General tab: startup behavior, save location, and after-capture behavior.
+/// Shared file, preview, and startup preferences for screenshots and recordings.
 struct GeneralSettingsView: View {
+    @ObservedObject private var cloud = CloudController.shared
     @AppStorage(SettingsStore.Keys.saveDirectory) private var saveDirectoryPath = SettingsStore.defaultSaveDirectory.path
+    @AppStorage(SettingsStore.Keys.filenamePrefix) private var filenamePrefix = "Lenscap"
     @AppStorage(SettingsStore.Keys.saveToDisk) private var saveToDisk = true
-    @AppStorage(SettingsStore.Keys.copyToClipboard) private var copyToClipboard = false
+    @AppStorage(SettingsStore.Keys.copyToClipboard) private var copyToClipboard = true
     @AppStorage(SettingsStore.Keys.showQuickAccess) private var showQuickAccess = true
     @AppStorage(SettingsStore.Keys.quickAccessDuration) private var quickAccessDuration = 8.0
     @AppStorage(SettingsStore.Keys.playSound) private var playSound = true
-    @AppStorage(SettingsStore.Keys.captureDelay) private var captureDelay = 0
     @State private var launchAtLogin = false
     @State private var launchAtLoginError: String?
 
     var body: some View {
         Form {
-            Section("Startup") {
-                Toggle("Launch Lenscap at login", isOn: Binding(
-                    get: { launchAtLogin },
-                    set: { newValue in setLaunchAtLogin(newValue) }
-                ))
-                Text("Lenscap uses macOS Login Items. You can review or change its approval in System Settings → General → Login Items.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                if let launchAtLoginError {
-                    Label(launchAtLoginError, systemImage: "exclamationmark.triangle")
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-            }
-
-            Section("Save Location") {
-                LabeledContent("Folder") {
+            Section {
+                LabeledContent("Save captures to") {
                     HStack(spacing: 8) {
                         Text((saveDirectoryPath as NSString).abbreviatingWithTildeInPath)
                             .lineLimit(1)
                             .truncationMode(.middle)
                             .foregroundStyle(.secondary)
+                            .help(saveDirectoryPath)
                         Button("Choose…") { chooseSaveDirectory() }
                     }
                 }
+                TextField("Filename prefix", text: $filenamePrefix)
+                    .textFieldStyle(.roundedBorder)
+            } header: {
+                Text("Files")
+            } footer: {
+                Text("The folder and filename prefix apply to screenshots, videos, and GIFs.")
             }
 
-            Section("After Capture") {
-                Toggle("Save to disk", isOn: $saveToDisk)
-                Toggle("Copy to clipboard", isOn: $copyToClipboard)
-                Toggle("Show quick access overlay", isOn: $showQuickAccess)
-                HStack {
-                    Slider(value: $quickAccessDuration, in: 3...15, step: 1) {
-                        Text("Overlay duration")
+            Section("Capture preview") {
+                Toggle("Show a preview after capture", isOn: $showQuickAccess)
+                LabeledContent("Dismiss after") {
+                    HStack(spacing: 12) {
+                        Slider(value: $quickAccessDuration, in: 3...15, step: 1) {
+                            Text("Preview duration")
+                        }
+                        .labelsHidden()
+                        .frame(width: 150)
+                        Text("\(Int(quickAccessDuration)) seconds")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 76, alignment: .trailing)
                     }
-                    Text("\(Int(quickAccessDuration))s")
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 32, alignment: .trailing)
                 }
                 .disabled(!showQuickAccess)
-                Toggle("Play sound", isOn: $playSound)
-                Picker("Capture delay", selection: $captureDelay) {
-                    Text("Off").tag(0)
-                    Text("3 seconds").tag(3)
-                    Text("5 seconds").tag(5)
-                    Text("10 seconds").tag(10)
+                Toggle("Play capture sound", isOn: $playSound)
+                if !saveToDisk && !copyToClipboard && !showQuickAccess && !cloud.isConfigured {
+                    CaptureOutputWarning()
                 }
+            }
+
+            Section {
+                Toggle("Open Lenscap at login", isOn: Binding(
+                    get: { launchAtLogin },
+                    set: { newValue in setLaunchAtLogin(newValue) }
+                ))
+                if let launchAtLoginError {
+                    Label(launchAtLoginError, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Startup")
+            } footer: {
+                Text("You can manage login items in System Settings → General → Login Items.")
             }
         }
         .formStyle(.grouped)
+        .scrollContentBackground(.hidden)
         .onAppear { launchAtLogin = LaunchAtLoginController.shared.isEnabled }
     }
 

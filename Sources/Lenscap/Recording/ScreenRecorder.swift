@@ -8,6 +8,29 @@ enum RecordingMode {
     case gif
 }
 
+@MainActor
+final class RecordingFinalizationCoordinator {
+    private var task: Task<Void, Never>?
+    var isFinalizing: Bool { task != nil }
+
+    func run(_ operation: @escaping @MainActor () async -> Void) async {
+        if let task {
+            await task.value
+            return
+        }
+        // Publish the task before its first suspension so Stop and Quit await
+        // the same work even after the recorder's isRecording flag is cleared.
+        let operationTask = Task { @MainActor in
+            await operation()
+            task = nil
+        }
+        task = operationTask
+        await operationTask.value
+    }
+
+    func wait() async { await task?.value }
+}
+
 /// SCStream-based screen recording: H.264 .mp4 (with optional system audio) or animated GIF.
 @MainActor
 final class ScreenRecorder: NSObject {
@@ -22,11 +45,20 @@ final class ScreenRecorder: NSObject {
     private var mode: RecordingMode = .video
     private var isStarting = false
     private var gifLimitHit = false
+    private let finalization: RecordingFinalizationCoordinator
+
+    init(finalization: RecordingFinalizationCoordinator? = nil) {
+        self.finalization = finalization ?? RecordingFinalizationCoordinator()
+        super.init()
+    }
+
+    var isFinalizing: Bool { finalization.isFinalizing }
+    var canStartRecording: Bool { !isRecording && !isStarting && !isFinalizing }
 
     // MARK: - Start
 
     func start(selection: SelectionResult?, mode: RecordingMode) async {
-        guard !isRecording, !isStarting else { return }
+        guard canStartRecording else { return }
         guard let screen = selection?.screen ?? NSScreen.main else {
             HUD.show("No screen available to record", symbol: "record.circle")
             return
@@ -78,11 +110,15 @@ final class ScreenRecorder: NSObject {
                     let factor = 960 / longest
                     pixelSize = CGSize(width: pixelSize.width * factor, height: pixelSize.height * factor)
                 }
+            } else {
+                // Large Retina captures can exceed browser H.264 decoder limits.
+                // Scale at capture time so the stream and writer use the same size.
+                pixelSize = RecordingStreamOutput.videoSize(for: pixelSize)
             }
             config.width = Self.evenPixels(pixelSize.width)
             config.height = Self.evenPixels(pixelSize.height)
 
-            let fps = max(1, mode == .video ? settings.videoFPS : settings.gifFPS)
+            let fps = mode == .video ? min(60, max(1, settings.videoFPS)) : max(1, settings.gifFPS)
             config.minimumFrameInterval = CMTime(value: 1, timescale: CMTimeScale(fps))
             config.showsCursor = settings.showCursorInRecordings
             config.queueDepth = 5
@@ -103,7 +139,8 @@ final class ScreenRecorder: NSObject {
                     .appendingPathComponent("Lenscap-\(UUID().uuidString).mp4")
                 out = try RecordingStreamOutput(videoTo: tempURL,
                                                 size: CGSize(width: config.width, height: config.height),
-                                                includeAudio: wantsAudio)
+                                                includeAudio: wantsAudio,
+                                                framesPerSecond: fps)
             case .gif:
                 out = RecordingStreamOutput(gifMaxDuration: 30)
                 out.onGIFLimitReached = { [weak self] in
@@ -159,23 +196,31 @@ final class ScreenRecorder: NSObject {
     // MARK: - Stop
 
     func stopAndSave() async {
-        guard isRecording, let output else { return }
-        isRecording = false
-        AppCoordinator.shared.statusBar?.setRecording(false)
-        hud?.hide()
-        hud = nil
-        outline?.hide()
-        outline = nil
-
-        if let stream {
-            try? await stream.stopCapture()
+        if isFinalizing {
+            await finalization.wait()
+            return
         }
-        stream = nil
-        self.output = nil
+        guard isRecording, let output else { return }
+        let stream = self.stream
+        let mode = self.mode
+        await finalization.run { [self] in
+            isRecording = false
+            AppCoordinator.shared.statusBar?.setRecording(false)
+            hud?.hide()
+            hud = nil
+            outline?.hide()
+            outline = nil
 
-        switch mode {
-        case .video: await finalizeVideo(output)
-        case .gif: await finalizeGIF(output)
+            if let stream {
+                try? await stream.stopCapture()
+            }
+            self.stream = nil
+            self.output = nil
+
+            switch mode {
+            case .video: await finalizeVideo(output)
+            case .gif: await finalizeGIF(output)
+            }
         }
     }
 
@@ -190,15 +235,15 @@ final class ScreenRecorder: NSObject {
         let directory = settings.saveDirectory
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let destination = ImageWriter.newFileURL(in: directory, prefix: settings.filenamePrefix, ext: "mp4")
-        do {
-            try FileManager.default.moveItem(at: tempURL, to: destination)
-        } catch {
-            try? FileManager.default.removeItem(at: tempURL)
-            HUD.show("Could not save recording: \(error.localizedDescription)", symbol: "record.circle")
-            return
+        let saved = Self.moveFinalizedVideo(at: tempURL, to: destination)
+        let thumbnail = await Self.videoThumbnail(for: saved.url)
+        // The writer has completed even when the chosen save folder is unavailable.
+        // Keep that playable file in history and let cloud staging copy it safely.
+        AppCoordinator.shared.ingestRecording(url: saved.url, kind: .video, thumbnail: thumbnail)
+        if saved.usedTemporaryLocation {
+            HUD.show("Could not use the save folder. Recording kept at: \(saved.url.path)",
+                     symbol: "exclamationmark.triangle", duration: 15)
         }
-        let thumbnail = await Self.videoThumbnail(for: destination)
-        AppCoordinator.shared.ingestRecording(url: destination, kind: .video, thumbnail: thumbnail)
     }
 
     private func finalizeGIF(_ output: RecordingStreamOutput) async {
@@ -245,6 +290,17 @@ final class ScreenRecorder: NSObject {
     }
 
     // MARK: - Helpers
+
+    static func moveFinalizedVideo(at temporaryURL: URL, to destination: URL)
+        -> (url: URL, usedTemporaryLocation: Bool) {
+        do {
+            try FileManager.default.moveItem(at: temporaryURL, to: destination)
+            return (destination, false)
+        } catch {
+            // A destination error must never destroy the only finalized copy.
+            return (temporaryURL, true)
+        }
+    }
 
     private func showCountdown() async {
         for count in [3, 2, 1] {

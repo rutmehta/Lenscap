@@ -4,3 +4,9 @@
 dist/
 *.xcodeproj
 .DS_Store
+.neon
+.env
+.env.*
+!.env.example
+node_modules/
+.cloud-local/

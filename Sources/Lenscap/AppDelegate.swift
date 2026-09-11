@@ -1,6 +1,43 @@
 import AppKit
 
+@MainActor
+final class CaptureShutdownCoordinator {
+    private let needsWait: () -> Bool
+    private let finishRecording: () async -> Void
+    private let waitForStaging: () async -> Void
+    private var task: Task<Void, Never>?
+
+    init(needsWait: @escaping () -> Bool,
+         finishRecording: @escaping () async -> Void,
+         waitForStaging: @escaping () async -> Void) {
+        self.needsWait = needsWait
+        self.finishRecording = finishRecording
+        self.waitForStaging = waitForStaging
+    }
+
+    func requestTermination(reply: @escaping @MainActor () -> Void) -> Bool {
+        if task != nil { return true }
+        guard needsWait() else { return false }
+        task = Task { @MainActor in
+            await finishRecording()
+            await waitForStaging()
+            task = nil
+            reply()
+        }
+        return true
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    @MainActor private lazy var shutdown = CaptureShutdownCoordinator(
+        needsWait: {
+            ScreenRecorder.shared.isRecording || ScreenRecorder.shared.isFinalizing
+                || CloudCaptureBridge.shared.isStaging
+        },
+        finishRecording: { await ScreenRecorder.shared.stopAndSave() },
+        waitForStaging: { await CloudCaptureBridge.shared.waitForStaging() }
+    )
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Start Sparkle before anything else so update checks can run in the
         // background while the user is capturing screenshots / recording.
@@ -19,23 +56,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // system dialog can actually be acted on.
     }
 
-    /// Lenscap is an accessory app, so it has no Dock icon or app menu to
-    /// recover from a hidden menu-bar item. Reopening it brings the retained
-    /// Settings window forward as a reliable entry point.
+    /// Reopening offers capture controls when no window is visible. Settings
+    /// only opens from its explicit action, never as a side effect of launching
+    /// or activating the accessory app.
     func applicationShouldHandleReopen(_ sender: NSApplication,
                                        hasVisibleWindows flag: Bool) -> Bool {
-        AppCoordinator.shared.openSettings()
-        return true
+        if !flag {
+            CapturePanelWindowController.open()
+        }
+        // Do not let AppKit restore another retained, hidden window afterward.
+        return false
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard ScreenRecorder.shared.isRecording else { return .terminateNow }
-        // Finish the in-flight recording (stop the stream, finalize the file,
-        // move it to the save folder) before letting the process exit.
-        Task { @MainActor in
-            await ScreenRecorder.shared.stopAndSave()
+        // Await the existing recording finalization and durable local upload
+        // staging, including a manual Stop already in progress. Never wait on network.
+        let needsWait = shutdown.requestTermination {
             sender.reply(toApplicationShouldTerminate: true)
         }
-        return .terminateLater
+        return needsWait ? .terminateLater : .terminateNow
     }
 }

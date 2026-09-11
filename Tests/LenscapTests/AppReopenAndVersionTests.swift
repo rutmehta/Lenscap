@@ -4,21 +4,43 @@ import XCTest
 
 @MainActor
 final class AppReopenAndVersionTests: XCTestCase {
-    func testReopeningAccessoryAppShowsAndReusesSettingsWindow() throws {
+    func testReopeningWithoutVisibleWindowsShowsCaptureControlsInsteadOfSettings() throws {
         let app = NSApplication.shared
         let delegate = AppDelegate()
+        app.windows.filter { $0.identifier?.rawValue == "LenscapSettings" }.forEach { $0.orderOut(nil) }
+        defer {
+            app.windows.filter {
+                ["LenscapSettings", "LenscapCapturePanel"].contains($0.identifier?.rawValue ?? "")
+            }.forEach { $0.close() }
+        }
 
-        XCTAssertTrue(delegate.applicationShouldHandleReopen(app, hasVisibleWindows: false))
-        let window = try XCTUnwrap(app.windows.first { $0.title == "General" })
-        defer { window.close() }
+        XCTAssertFalse(delegate.applicationShouldHandleReopen(app, hasVisibleWindows: false))
+        XCTAssertFalse(app.windows.contains { $0.identifier?.rawValue == "LenscapSettings" && $0.isVisible })
+        let window = try XCTUnwrap(app.windows.first { $0.identifier?.rawValue == "LenscapCapturePanel" })
         XCTAssertTrue(window.isVisible)
 
         window.orderOut(nil)
-        XCTAssertFalse(window.isVisible)
-
-        XCTAssertTrue(delegate.applicationShouldHandleReopen(app, hasVisibleWindows: false))
+        XCTAssertFalse(delegate.applicationShouldHandleReopen(app, hasVisibleWindows: false))
         XCTAssertTrue(window.isVisible)
-        XCTAssertEqual(app.windows.filter { $0.title == "General" }.count, 1)
+        XCTAssertEqual(app.windows.filter { $0.identifier?.rawValue == "LenscapCapturePanel" }.count, 1)
+        XCTAssertFalse(app.windows.contains { $0.identifier?.rawValue == "LenscapSettings" && $0.isVisible })
+    }
+
+    func testReopeningWithAVisibleWindowDoesNotReopenHiddenSettings() throws {
+        let app = NSApplication.shared
+        SettingsWindowController.open()
+        let settings = try XCTUnwrap(app.windows.first { $0.identifier?.rawValue == "LenscapSettings" })
+        settings.orderOut(nil)
+        let existing = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                                styleMask: [.titled], backing: .buffered, defer: false)
+        existing.isReleasedWhenClosed = false
+        existing.orderFront(nil)
+        defer { settings.close(); existing.close() }
+
+        XCTAssertFalse(AppDelegate().applicationShouldHandleReopen(app, hasVisibleWindows: true))
+
+        XCTAssertFalse(settings.isVisible)
+        XCTAssertTrue(existing.isVisible)
     }
 
     func testDisplayVersionPrefersShortVersionFromBundleFixture() throws {

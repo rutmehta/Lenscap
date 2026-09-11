@@ -174,6 +174,7 @@ final class EditorState: ObservableObject {
                 HUD.show("Save failed")
                 return
             }
+            CloudCaptureBridge.shared.savedImage(data, url: sourceURL)
         } else {
             let directory = settings.saveDirectory
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -187,6 +188,7 @@ final class EditorState: ObservableObject {
             sourceURL = url
             window?.title = url.lastPathComponent
             HistoryStore.shared.add(url: url, kind: .screenshot)
+            CloudCaptureBridge.shared.savedImage(data, url: url)
         }
         HUD.show("Saved", symbol: "checkmark.circle")
     }
@@ -213,6 +215,7 @@ final class EditorState: ObservableObject {
             }
             self?.sourceURL = url
             self?.window?.title = url.lastPathComponent
+            CloudCaptureBridge.shared.savedImage(data, url: url)
             HUD.show("Saved", symbol: "checkmark.circle")
         }
 

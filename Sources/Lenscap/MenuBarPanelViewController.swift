@@ -1,10 +1,10 @@
 import AppKit
 
-/// The primary left-click surface for Lenscap. It is intentionally a small control
-/// panel rather than a long list of hotkeys: the common capture choices are visible,
-/// grouped, and individually labelled for keyboard navigation and VoiceOver.
+/// Capture controls shared by the standalone Lenscap window and debug snapshots.
 @MainActor
 final class MenuBarPanelViewController: NSViewController {
+    static let contentSize = NSSize(width: 348, height: 484)
+
     enum Action: String {
         case captureArea
         case captureWindow
@@ -29,6 +29,8 @@ final class MenuBarPanelViewController: NSViewController {
     private var gifButton: NSButton?
 
     override func loadView() {
+        root.frame = NSRect(origin: .zero, size: Self.contentSize)
+        preferredContentSize = Self.contentSize
         root.material = .popover
         root.blendingMode = .behindWindow
         root.state = .active
@@ -54,8 +56,8 @@ final class MenuBarPanelViewController: NSViewController {
             outer.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             outer.topAnchor.constraint(equalTo: root.topAnchor),
             outer.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-            root.widthAnchor.constraint(equalToConstant: 348),
-            root.heightAnchor.constraint(equalToConstant: 484),
+            root.widthAnchor.constraint(equalToConstant: Self.contentSize.width),
+            root.heightAnchor.constraint(equalToConstant: Self.contentSize.height),
         ])
 
         let header = NSStackView()
@@ -133,7 +135,10 @@ final class MenuBarPanelViewController: NSViewController {
         footer.orientation = .horizontal
         footer.spacing = 8
         footer.addArrangedSubview(footerButton("History", symbol: "clock.arrow.circlepath", action: .history))
-        footer.addArrangedSubview(footerButton("Settings", symbol: "gearshape", action: .settings))
+        let settingsButton = footerButton("Settings…", symbol: "gearshape", action: .settings)
+        settingsButton.keyEquivalent = ","
+        settingsButton.keyEquivalentModifierMask = .command
+        footer.addArrangedSubview(settingsButton)
         outer.addArrangedSubview(footer)
 
         updateRecordingState()
@@ -166,7 +171,7 @@ final class MenuBarPanelViewController: NSViewController {
         return rows
     }
 
-    private func actionButton(_ title: String, symbol: String, action: Action) -> NSButton {
+    private func actionButton(_ title: String, symbol: String, action: Action, height: CGFloat = 38) -> NSButton {
         let button = NSButton(title: title, target: self, action: #selector(actionPressed(_:)))
         button.identifier = NSUserInterfaceItemIdentifier(action.rawValue)
         button.setAccessibilityLabel(title)
@@ -178,15 +183,14 @@ final class MenuBarPanelViewController: NSViewController {
         button.controlSize = .large
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.translatesAutoresizingMaskIntoConstraints = false
-        button.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        button.heightAnchor.constraint(equalToConstant: height).isActive = true
         return button
     }
 
     private func footerButton(_ title: String, symbol: String, action: Action) -> NSButton {
-        let button = actionButton(title, symbol: symbol, action: action)
+        let button = actionButton(title, symbol: symbol, action: action, height: 32)
         button.bezelStyle = .texturedRounded
         button.controlSize = .regular
-        button.heightAnchor.constraint(equalToConstant: 32).isActive = true
         return button
     }
 

@@ -24,13 +24,20 @@ struct HotkeyRecorderView: NSViewRepresentable {
 final class HotkeyRecorderButton: NSButton {
     var hotkeyAction: HotkeyAction
     private var monitor: Any?
+    private var cancellationObservers: [NSObjectProtocol] = []
     private var isArmed = false
+    private let pauseRegistrations: () -> Void
+    private let resumeRegistrations: () -> Void
 
     /// Only one recorder may be armed at a time across all rows.
     private static weak var armedButton: HotkeyRecorderButton?
 
-    init(hotkeyAction: HotkeyAction) {
+    init(hotkeyAction: HotkeyAction,
+         pauseRegistrations: @escaping () -> Void = { HotkeyManager.shared.pauseRegistrations() },
+         resumeRegistrations: @escaping () -> Void = { HotkeyManager.shared.resumeRegistrations() }) {
         self.hotkeyAction = hotkeyAction
+        self.pauseRegistrations = pauseRegistrations
+        self.resumeRegistrations = resumeRegistrations
         super.init(frame: .zero)
         isBordered = false
         setButtonType(.momentaryChange)
@@ -47,6 +54,7 @@ final class HotkeyRecorderButton: NSButton {
 
     deinit {
         if let monitor { NSEvent.removeMonitor(monitor) }
+        cancellationObservers.forEach(NotificationCenter.default.removeObserver)
     }
 
     override func viewWillMove(toWindow newWindow: NSWindow?) {
@@ -55,13 +63,17 @@ final class HotkeyRecorderButton: NSButton {
     }
 
     func refreshTitle() {
+        let shortcut = HotkeyManager.shared.combo(for: hotkeyAction)?.displayString
         let text: String
         if isArmed {
             text = "Press Shortcut…"
         } else {
-            text = HotkeyManager.shared.combo(for: hotkeyAction)?.displayString ?? "Record Shortcut"
+            text = shortcut ?? "Record Shortcut"
         }
         applyStyle(text: text)
+        setAccessibilityLabel("\(hotkeyAction.title) shortcut")
+        setAccessibilityValue(isArmed ? "Recording shortcut" : (shortcut ?? "Not set"))
+        setAccessibilityHelp("Press to record a shortcut. Escape cancels; Delete clears the shortcut.")
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -72,11 +84,13 @@ final class HotkeyRecorderButton: NSButton {
     /// Rounded-rect fill like the system shortcut recorders: quiet secondary fill at
     /// rest, accent-tinted while armed and waiting for a key.
     private func applyStyle(text: String) {
-        let background = isArmed
-            ? NSColor.controlAccentColor
-            : NSColor.labelColor.withAlphaComponent(0.07)
         let textColor: NSColor = isArmed ? .white : .labelColor
         effectiveAppearance.performAsCurrentDrawingAppearance { [self] in
+            // Applying alpha resolves the dynamic color, so do it in this view's
+            // appearance rather than whichever appearance is currently drawing.
+            let background = isArmed
+                ? NSColor.controlAccentColor
+                : NSColor.labelColor.withAlphaComponent(0.07)
             layer?.backgroundColor = background.cgColor
         }
 
@@ -102,8 +116,17 @@ final class HotkeyRecorderButton: NSButton {
         isArmed = true
         // Drop the app's global registrations while recording, otherwise pressing a
         // registered combo fires its action instead of reaching this monitor.
-        HotkeyManager.shared.pauseRegistrations()
+        pauseRegistrations()
         refreshTitle()
+        if let window {
+            // Closing a retained Settings window does not detach its views. Cancel
+            // explicitly so global shortcuts cannot remain paused off screen.
+            cancellationObservers = [NSWindow.willCloseNotification, NSWindow.didResignKeyNotification].map { name in
+                NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.disarm() }
+                }
+            }
+        }
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self, self.isArmed else { return event }
@@ -113,13 +136,15 @@ final class HotkeyRecorderButton: NSButton {
     }
 
     private func disarm() {
+        cancellationObservers.forEach(NotificationCenter.default.removeObserver)
+        cancellationObservers.removeAll()
         if let monitor {
             NSEvent.removeMonitor(monitor)
             self.monitor = nil
         }
         if isArmed {
             isArmed = false
-            HotkeyManager.shared.resumeRegistrations()
+            resumeRegistrations()
         }
         if Self.armedButton === self { Self.armedButton = nil }
         refreshTitle()

@@ -1,15 +1,10 @@
 import AppKit
 
-/// Owns the menu-bar status item. A normal click opens the compact control panel;
-/// a right click (or Control-click) opens the compatibility menu with utility
-/// commands such as updates and Quit.
+/// The normal status-item click opens the complete native menu, including Settings.
 @MainActor
 final class StatusBarController: NSObject, NSMenuDelegate {
     private let statusItem: NSStatusItem
-    private let fallbackMenu = NSMenu()
-    private let popover = NSPopover()
-    private let panelController = MenuBarPanelViewController()
-    private var recording = false
+    private let menu = NSMenu(title: "Lenscap")
 
     override init() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -18,136 +13,96 @@ final class StatusBarController: NSObject, NSMenuDelegate {
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "Lenscap")
             button.image?.isTemplate = true
-            button.toolTip = "Lenscap — open capture panel"
-            button.target = self
-            button.action = #selector(statusItemPressed(_:))
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.toolTip = "Lenscap — capture, history, and settings"
         }
 
-        panelController.onAction = { [weak self] action in
-            self?.perform(action)
-        }
-        popover.contentViewController = panelController
-        popover.behavior = .transient
-        popover.animates = true
-        popover.appearance = NSAppearance(named: .vibrantLight)
-
-        fallbackMenu.delegate = self
-        rebuildFallbackMenu()
+        menu.delegate = self
+        rebuildMenu()
+        statusItem.menu = menu
     }
 
     func setRecording(_ recording: Bool) {
-        self.recording = recording
-        panelController.isRecording = recording
+        CapturePanelWindowController.setRecording(recording)
         if let button = statusItem.button {
             let symbol = recording ? "stop.circle.fill" : "camera.viewfinder"
             button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Lenscap")
             button.contentTintColor = recording ? .systemRed : nil
         }
-        rebuildFallbackMenu()
+        rebuildMenu()
     }
 
     func refreshMenuState() {
-        rebuildFallbackMenu()
-        panelController.isRecording = recording
+        rebuildMenu()
+        CapturePanelWindowController.setRecording(ScreenRecorder.shared.isRecording)
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        rebuildFallbackMenu()
+        rebuildMenu()
     }
 
-    /// Used only by the deterministic snapshot route; it is the same view installed
-    /// in the live popover, not a hand-drawn approximation.
+    /// The snapshot route renders the same view hosted in the standalone capture window.
     func panelViewForSnapshot() -> NSView {
-        panelController.loadViewIfNeeded()
-        panelController.view.layoutSubtreeIfNeeded()
-        return panelController.view
+        CapturePanelWindowController.panelViewForSnapshot()
     }
 
-    @objc private func statusItemPressed(_ sender: NSStatusBarButton) {
-        let event = NSApp.currentEvent
-        let isRightClick = event?.type == .rightMouseUp || event?.type == .rightMouseDown
-        let isControlClick = event?.modifierFlags.contains(.control) == true
-        if isRightClick || isControlClick {
-            showFallbackMenu(from: sender)
-        } else {
-            togglePopover(from: sender)
+    private func rebuildMenu() {
+        let replacement = Self.makeMenu(isRecording: ScreenRecorder.shared.isRecording,
+                                        actionTarget: self, updatesTarget: UpdaterController.shared,
+                                        quitTarget: NSApp)
+        menu.removeAllItems()
+        for item in replacement.items {
+            replacement.removeItem(item)
+            menu.addItem(item)
         }
     }
 
-    private func togglePopover(from button: NSStatusBarButton) {
-        if popover.isShown {
-            popover.performClose(nil)
-            return
+    static func makeMenu(isRecording: Bool, actionTarget: AnyObject,
+                         updatesTarget: AnyObject, quitTarget: AnyObject) -> NSMenu {
+        let menu = NSMenu()
+        func item(_ title: String, _ selector: Selector, symbol: String) -> NSMenuItem {
+            let item = NSMenuItem(title: title, action: selector, keyEquivalent: "")
+            item.target = actionTarget
+            item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+            return item
         }
-        panelController.isRecording = ScreenRecorder.shared.isRecording
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
-    }
-
-    private func showFallbackMenu(from button: NSStatusBarButton) {
-        rebuildFallbackMenu()
-        let point = NSPoint(x: button.bounds.midX, y: button.bounds.minY)
-        fallbackMenu.popUp(positioning: nil, at: point, in: button)
-    }
-
-    private func rebuildFallbackMenu() {
-        fallbackMenu.removeAllItems()
-        let currentRecording = ScreenRecorder.shared.isRecording
-        if currentRecording {
-            fallbackMenu.addItem(item("Stop Recording", #selector(stopRecording), symbol: "stop.circle.fill"))
-            fallbackMenu.addItem(.separator())
+        menu.addItem(item("Capture Panel…", #selector(openCapturePanel), symbol: "camera.viewfinder"))
+        menu.addItem(.separator())
+        if isRecording {
+            menu.addItem(item("Stop Recording", #selector(stopRecording), symbol: "stop.circle.fill"))
+            menu.addItem(.separator())
         }
-        fallbackMenu.addItem(item("Capture Area", #selector(captureArea), symbol: "rectangle.dashed"))
-        fallbackMenu.addItem(item("Window", #selector(captureWindow), symbol: "macwindow"))
-        fallbackMenu.addItem(item("Fullscreen", #selector(captureFullscreen), symbol: "display"))
-        fallbackMenu.addItem(item("Scrolling", #selector(scrollingCapture), symbol: "arrow.up.and.down.square"))
-        fallbackMenu.addItem(item("OCR", #selector(captureText), symbol: "text.viewfinder"))
-        fallbackMenu.addItem(.separator())
-        if !currentRecording {
-            fallbackMenu.addItem(item("Record Video", #selector(recordVideo), symbol: "record.circle"))
-            fallbackMenu.addItem(item("Record GIF", #selector(recordGIF), symbol: "photo.stack"))
-            fallbackMenu.addItem(.separator())
+        menu.addItem(item("Capture Area", #selector(captureArea), symbol: "rectangle.dashed"))
+        menu.addItem(item("Window", #selector(captureWindow), symbol: "macwindow"))
+        menu.addItem(item("Fullscreen", #selector(captureFullscreen), symbol: "display"))
+        menu.addItem(item("Scrolling", #selector(scrollingCapture), symbol: "arrow.up.and.down.square"))
+        menu.addItem(item("OCR", #selector(captureText), symbol: "text.viewfinder"))
+        menu.addItem(.separator())
+        if !isRecording {
+            menu.addItem(item("Record Video", #selector(recordVideo), symbol: "record.circle"))
+            menu.addItem(item("Record GIF", #selector(recordGIF), symbol: "photo.stack"))
+            menu.addItem(.separator())
         }
-        fallbackMenu.addItem(item("History", #selector(openHistory), symbol: "clock.arrow.circlepath"))
-        fallbackMenu.addItem(item("Settings", #selector(openSettings), symbol: "gearshape"))
-        fallbackMenu.addItem(.separator())
-
+        menu.addItem(item("History", #selector(openHistory), symbol: "clock.arrow.circlepath"))
+        menu.addItem(item("Cloud Library…", #selector(openCloudLibrary), symbol: "icloud"))
+        let settings = item("Settings…", #selector(openSettings), symbol: "gearshape")
+        settings.keyEquivalent = ","
+        settings.keyEquivalentModifierMask = .command
+        menu.addItem(settings)
+        menu.addItem(.separator())
         let updates = NSMenuItem(title: "Check for Updates…",
                                  action: #selector(UpdaterController.checkForUpdates(_:)),
                                  keyEquivalent: "")
-        updates.target = UpdaterController.shared
-        fallbackMenu.addItem(updates)
-
+        updates.target = updatesTarget
+        menu.addItem(updates)
         let quit = NSMenuItem(title: "Quit Lenscap", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        quit.target = NSApp
-        fallbackMenu.addItem(quit)
+        quit.target = quitTarget
+        menu.addItem(quit)
+        return menu
     }
 
-    private func item(_ title: String, _ selector: Selector, symbol: String) -> NSMenuItem {
-        let menuItem = NSMenuItem(title: title, action: selector, keyEquivalent: "")
-        menuItem.target = self
-        menuItem.image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
-        return menuItem
-    }
+    // MARK: - Explicit native-menu actions
 
-    private func perform(_ action: MenuBarPanelViewController.Action) {
-        switch action {
-        case .captureArea: captureArea()
-        case .captureWindow: captureWindow()
-        case .captureFullscreen: captureFullscreen()
-        case .scrollingCapture: scrollingCapture()
-        case .captureText: captureText()
-        case .recordVideo: recordVideo()
-        case .recordGIF: recordGIF()
-        case .history: openHistory()
-        case .settings: openSettings()
-        }
-        popover.performClose(nil)
-    }
-
-    // MARK: - Actions shared by the panel and fallback menu
-
+    @objc private func openCapturePanel() { CapturePanelWindowController.open() }
     @objc private func captureArea() { AppCoordinator.shared.captureArea() }
     @objc private func captureWindow() { AppCoordinator.shared.captureWindow() }
     @objc private func captureFullscreen() { AppCoordinator.shared.captureFullscreen() }
@@ -157,5 +112,6 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     @objc private func recordGIF() { AppCoordinator.shared.toggleRecording(mode: .gif) }
     @objc private func stopRecording() { AppCoordinator.shared.stopRecordingIfNeeded() }
     @objc private func openHistory() { AppCoordinator.shared.openHistory() }
+    @objc private func openCloudLibrary() { AppCoordinator.shared.openCloudLibrary() }
     @objc private func openSettings() { AppCoordinator.shared.openSettings() }
 }

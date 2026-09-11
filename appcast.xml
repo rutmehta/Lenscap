@@ -19,6 +19,14 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     <item>
+      <title>Version 1.1.2</title>
+      <pubDate>Fri, 11 Sep 2026 03:27:05 +0000</pubDate>
+      <sparkle:version>1.1.2</sparkle:version>
+      <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+      <description>Adds the opt-in personal cloud: connect your own Neon project for automatic private uploads of new screenshots, recordings, and GIFs, a cloud library, and time-limited share links. Lenscap ships with no hosted backend and no cloud credentials. Also adds a dedicated capture-controls window, explicit Settings and Cloud Library menu items, and recording fixes.</description>
+      <enclosure url="https://github.com/rutmehta/Lenscap/releases/download/v1.1.2/Lenscap-1.1.2.dmg" sparkle:edSignature="t8G+lSGo/QR62UT6V/nOcE+bu3pMk/W0HtSZdP4o3laFLgSHrjp+1TvaqhmsU2ODrlPJO/0oNemzVYNn2kpOAw==" length="2965060" type="application/octet-stream"></enclosure>
+    </item>
+    <item>
       <title>Version 1.0.2</title>
       <pubDate>Fri, 28 Aug 2026 00:17:03 +0000</pubDate>
       <sparkle:version>1.0.2</sparkle:version>
@@ -44,6 +52,6 @@ IMPORTANT: This file was signed by Sparkle. Any modifications to this file requi
     </item>
   </channel>
 </rss><!-- sparkle-signatures:
-edSignature: rp8cgrh7NcUAM0lifIGRsBWcIu9Oot0TA0jzk8MTAL5uoDRLHgQkqCY2bJTOPSsib5nTv+hS54T6gaMsfXrlDA==
-length: 3084
+edSignature: NnZaXMHExA2lpWzr1FtdK6mboY9RyZ43ziWXcof264m56EBMXV5OnuDqhSOPCtzdiOZJPhBxj7b63Nnq21FgBA==
+length: 3983
 -->
